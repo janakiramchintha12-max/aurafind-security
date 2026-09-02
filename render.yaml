@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: aurafind-security
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    region: oregon
+    envVars:
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        value: sqlite:///./findmydevice.db
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: 1440

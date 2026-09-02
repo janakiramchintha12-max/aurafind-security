@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  backend:
+    build: ./backend
+    container_name: aurafind-backend
+    restart: always
+    ports:
+      - "8000:8000"
+    environment:
+      - SECRET_KEY=production-secret-key-change-me-32bytes-min
+      - DATABASE_URL=sqlite:///./findmydevice.db
+    volumes:
+      - ./backend/findmydevice.db:/app/findmydevice.db
+
+  dashboard:
+    build: ./dashboard
+    container_name: aurafind-dashboard
+    restart: always
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend

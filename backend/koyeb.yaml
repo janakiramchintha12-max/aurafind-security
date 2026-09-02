@@ -1,0 +1,14 @@
+type: api
+version: "1"
+name: aurafind-backend
+services:
+  - name: aurafind-api
+    dockerfile: Dockerfile
+    ports:
+      - port: 8000
+        path: /
+    routes:
+      - path: /
+        port: 8000
+    regions:
+      - fra

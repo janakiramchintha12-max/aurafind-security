@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+*$py.class
+*.db
+*.db-journal
+*.log
+node_modules/
+android/app/build/
+android/.gradle/
+android/local.properties
+.env
+.idea/
+.vscode/
+cloudflared.exe
