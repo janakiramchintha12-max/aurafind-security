@@ -26,7 +26,7 @@ def list_devices(
             if hb.tzinfo is None:
                 hb = hb.replace(tzinfo=timezone.utc)
             delta = (now - hb).total_seconds()
-            if delta > 120 and dev.status == "ONLINE":
+            if delta > 300 and dev.status == "ONLINE":
                 dev.status = "OFFLINE"
     db.commit()
     return devices

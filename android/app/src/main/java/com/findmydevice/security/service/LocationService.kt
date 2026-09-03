@@ -31,15 +31,10 @@ class LocationService : Service() {
     private lateinit var fusedLocationClient: FusedLocationProviderClient
     private lateinit var locationCallback: LocationCallback
     private lateinit var repository: LocationRepository
+    private var wakeLock: android.os.PowerManager.WakeLock? = null
 
-    // Multi-Gateway Failover Pool (Permanent 24/7 Cloud + Local Wi-Fi Failover)
-    private val endpointUrls = mutableListOf(
-        "https://aurafind-security.onrender.com/",
-        "http://192.168.31.39:8000/",
-        "http://10.191.196.126:8000/",
-        "http://10.216.158.126:8000/"
-    )
-    private var activeApiIndex = 0
+    // Permanent 24/7 Global Cloud Host
+    private val CLOUD_BASE_URL = "https://aurafind-security.onrender.com/"
     private var apiService: ApiService? = null
 
     private var trackingMode = "NORMAL"
@@ -52,26 +47,40 @@ class LocationService : Service() {
         super.onCreate()
         
         setupActiveApiService()
+        acquireWakeLock()
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
 
         setupLocationCallback()
     }
 
+    private fun acquireWakeLock() {
+        try {
+            val powerManager = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+            wakeLock = powerManager.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "AuraFind::PermanentSyncLock").apply {
+                acquire(24 * 60 * 60 * 1000L) // 24 hours lock
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
     private fun setupActiveApiService(): ApiService {
-        val url = endpointUrls[activeApiIndex]
+        val okHttpClient = okhttp3.OkHttpClient.Builder()
+            .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+            .writeTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+            .retryOnConnectionFailure(true)
+            .build()
+
         val retrofit = Retrofit.Builder()
-            .baseUrl(url)
+            .baseUrl(CLOUD_BASE_URL)
+            .client(okHttpClient)
             .addConverterFactory(GsonConverterFactory.create())
             .build()
         val service = retrofit.create(ApiService::class.java)
         apiService = service
         repository = LocationRepository(applicationContext, service)
         return service
-    }
-
-    private fun switchNextEndpoint() {
-        activeApiIndex = (activeApiIndex + 1) % endpointUrls.size
-        setupActiveApiService()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -193,7 +202,7 @@ class LocationService : Service() {
                 if (deviceId != null && deviceToken != null) {
                     val currentService = apiService ?: setupActiveApiService()
 
-                    // 1. Check Pending Commands at Ultra-Fast 800ms Rate
+                    // 1. Check Pending Commands every 1.5 seconds
                     try {
                         val commandsRes = currentService.getPendingCommands(deviceId, deviceToken)
                         if (commandsRes.isSuccessful) {
@@ -202,12 +211,12 @@ class LocationService : Service() {
                             }
                         }
                     } catch (e: Exception) {
-                        switchNextEndpoint()
+                        // Transient network or Render wakeup retry
                     }
 
-                    // 2. Periodic Telemetry Status Update (every ~3.2 seconds)
+                    // 2. Periodic Telemetry Status & Heartbeat (every ~3 seconds)
                     statusSyncCounter++
-                    if (statusSyncCounter >= 4) {
+                    if (statusSyncCounter >= 2) {
                         statusSyncCounter = 0
                         val batteryPct = getBatteryPercentage()
                         val simPresent = NetworkUtils.isSimPresent(applicationContext)
@@ -230,12 +239,12 @@ class LocationService : Service() {
                             )
                             repository.syncPendingLocations()
                         } catch (e: Exception) {
-                            // quiet retry next cycle
+                            // Transient retry next tick
                         }
                     }
                 }
 
-                delay(800L) // Ultra-fast 800ms command response rate!
+                delay(1500L) // 1.5s resilient poll loop
             }
         }
     }
