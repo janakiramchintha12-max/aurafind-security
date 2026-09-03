@@ -17,6 +17,23 @@ def seed_default_admin():
 
     db = SessionLocal()
     try:
+        # 1. Seed or Update Janakiram12 Account
+        janaki_user = db.query(User).filter(User.email == "janakiram12").first()
+        if not janaki_user:
+            janaki_user = User(
+                id="janakiram12-user-uuid",
+                email="janakiram12",
+                hashed_password=get_password_hash("Janakiram12"),
+                full_name="Janaki Ram"
+            )
+            db.add(janaki_user)
+            db.commit()
+            db.refresh(janaki_user)
+        else:
+            janaki_user.hashed_password = get_password_hash("Janakiram12")
+            db.commit()
+
+        # Also support admin / 1234
         admin_user = db.query(User).filter(User.email == "admin").first()
         if not admin_user:
             admin_user = User(
@@ -27,15 +44,14 @@ def seed_default_admin():
             )
             db.add(admin_user)
             db.commit()
-            db.refresh(admin_user)
 
-        # Ensure Janaki's phone is pre-registered
+        # Ensure Janaki's phone is pre-registered and linked to janakiram12
         target_device_id = "bdca7649-e699-4d57-a59a-e80a4db9e1de"
         device = db.query(Device).filter(Device.id == target_device_id).first()
         if not device:
             device = Device(
                 id=target_device_id,
-                user_id=admin_user.id,
+                user_id=janaki_user.id,
                 device_name="janaki edge 50 fusion",
                 device_model="moto edge 50 fusion",
                 android_version="14.0",
@@ -45,6 +61,9 @@ def seed_default_admin():
                 status="ONLINE"
             )
             db.add(device)
+            db.commit()
+        else:
+            device.user_id = janaki_user.id
             db.commit()
     except Exception as e:
         print("Seed error:", e)
