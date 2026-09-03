@@ -32,10 +32,10 @@ class LocationService : Service() {
     private lateinit var locationCallback: LocationCallback
     private lateinit var repository: LocationRepository
 
-    // Multi-Gateway Failover Pool (Local Wi-Fi + Active 4G/5G Cloudflare Tunnel)
+    // Multi-Gateway Failover Pool (Permanent 24/7 Cloud + Local Wi-Fi Failover)
     private val endpointUrls = mutableListOf(
+        "https://aurafind-security.onrender.com/",
         "http://192.168.31.39:8000/",
-        "https://thousand-profit-addressed-drawings.trycloudflare.com/",
         "http://10.191.196.126:8000/",
         "http://10.216.158.126:8000/"
     )

@@ -76,12 +76,29 @@ import os
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
-dashboard_dist = os.path.join(os.path.dirname(__file__), "..", "..", "dashboard", "dist")
-if not os.path.exists(dashboard_dist):
-    dashboard_dist = os.path.join(os.path.dirname(__file__), "..", "dashboard_dist")
+possible_dist_paths = [
+    os.path.join(os.path.dirname(__file__), "..", "dashboard_dist"),
+    os.path.join(os.path.dirname(__file__), "..", "..", "dashboard", "dist"),
+    "/app/backend/dashboard_dist",
+    "/app/dashboard/dist",
+    os.path.abspath("dashboard_dist"),
+    os.path.abspath("dashboard/dist")
+]
 
-if os.path.exists(dashboard_dist):
-    app.mount("/assets", StaticFiles(directory=os.path.join(dashboard_dist, "assets")), name="assets")
+dashboard_dist = None
+for p in possible_dist_paths:
+    if os.path.exists(p) and os.path.exists(os.path.join(p, "index.html")):
+        dashboard_dist = p
+        break
+
+if dashboard_dist:
+    assets_path = os.path.join(dashboard_dist, "assets")
+    if os.path.exists(assets_path):
+        app.mount("/assets", StaticFiles(directory=assets_path), name="assets")
+
+    @app.get("/")
+    async def serve_spa_root():
+        return FileResponse(os.path.join(dashboard_dist, "index.html"))
 
     @app.get("/{full_path:path}")
     async def serve_spa_frontend(full_path: str):
