@@ -70,36 +70,18 @@ export const LiveLocationPage: React.FC = () => {
   const [mapTheme, setMapTheme] = useState<'satellite' | 'dark' | 'street'>('satellite');
   const [loading, setLoading] = useState(true);
 
-  // 1. Automatic Real-Time Laptop GPS via Browser Geolocation API
+  const [laptopAnchorLocked, setLaptopAnchorLocked] = useState(false);
+
+  // Auto-anchor Laptop Base directly to Phone's high-precision Satellite GPS on load
   useEffect(() => {
-    if ('geolocation' in navigator) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          setUserLocation({
-            lat: pos.coords.latitude,
-            lng: pos.coords.longitude,
-            accuracy: pos.coords.accuracy
-          });
-        },
-        (err) => console.log('Laptop geolocation error:', err),
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-      );
-
-      const watchId = navigator.geolocation.watchPosition(
-        (pos) => {
-          setUserLocation({
-            lat: pos.coords.latitude,
-            lng: pos.coords.longitude,
-            accuracy: pos.coords.accuracy
-          });
-        },
-        (err) => console.log('Laptop geolocation watch error:', err),
-        { enableHighAccuracy: true, maximumAge: 1000 }
-      );
-
-      return () => navigator.geolocation.clearWatch(watchId);
+    if (!laptopAnchorLocked && selectedDevice?.last_latitude && selectedDevice?.last_longitude) {
+      setUserLocation({
+        lat: selectedDevice.last_latitude,
+        lng: selectedDevice.last_longitude
+      });
+      setLaptopAnchorLocked(true);
     }
-  }, []);
+  }, [selectedDevice?.last_latitude, selectedDevice?.last_longitude, laptopAnchorLocked]);
 
   const fetchDevices = async () => {
     try {
