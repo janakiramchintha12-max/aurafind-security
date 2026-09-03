@@ -100,6 +100,22 @@ app.include_router(audit.router, prefix=f"{settings.API_V1_STR}/audit-logs", tag
 def health_check():
     return {"status": "healthy", "project": settings.PROJECT_NAME}
 
+@app.get("/download/app.apk")
+def download_app_apk():
+    import os
+    possible_paths = [
+        os.path.join(os.path.dirname(__file__), "..", "app-debug.apk"),
+        os.path.join(os.path.dirname(__file__), "..", "..", "android", "app", "build", "outputs", "apk", "debug", "app-debug.apk"),
+        "/app/backend/app-debug.apk",
+        os.path.abspath("backend/app-debug.apk"),
+        os.path.abspath("app-debug.apk"),
+        os.path.abspath("public/app-debug.apk")
+    ]
+    for p in possible_paths:
+        if os.path.exists(p):
+            return FileResponse(p, media_type="application/vnd.android.package-archive", filename="AuraFind-Security.apk")
+    return {"error": "APK not found"}
+
 @app.websocket("/api/v1/ws")
 async def websocket_endpoint(
     websocket: WebSocket,

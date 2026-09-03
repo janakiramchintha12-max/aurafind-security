@@ -252,6 +252,26 @@ export const LiveDiagnosticsPanel: React.FC<LiveDiagnosticsPanelProps> = ({ devi
             </div>
           )}
 
+          {/* 24/7 Cloud Connection APK Download Card */}
+          <div className="p-3 bg-cyan-950/40 border border-cyan-800/40 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+            <div className="space-y-0.5">
+              <div className="font-bold text-cyan-300 flex items-center gap-1.5">
+                <span>📱 Permanent 24/7 Cloud Connection APK</span>
+              </div>
+              <p className="text-slate-400 text-[11px]">
+                Install this update on your Motorola phone to keep it <span className="text-emerald-400 font-bold">🟢 ONLINE 24/7</span> permanently via Render Cloud!
+              </p>
+            </div>
+
+            <a
+              href="/download/app.apk"
+              download="AuraFind-Security.apk"
+              className="px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold rounded-lg shadow-lg flex items-center gap-1.5 flex-shrink-0 text-center justify-center transition-all"
+            >
+              <span>⬇️ Download Phone APK</span>
+            </a>
+          </div>
+
           {/* Emergency Offline SMS Command Box */}
           <div className="p-3 bg-purple-950/40 border border-purple-800/40 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
             <div className="space-y-0.5">
