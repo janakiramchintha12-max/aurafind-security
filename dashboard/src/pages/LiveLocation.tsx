@@ -257,7 +257,7 @@ export const LiveLocationPage: React.FC = () => {
           </div>
 
           {/* User / Laptop Position Info */}
-          <div className="bg-slate-900/70 p-2.5 rounded-xl border border-slate-700/60 text-center">
+          <div className="bg-slate-900/70 p-2.5 rounded-xl border border-slate-700/60 text-center flex flex-col justify-between">
             <div className="text-[10px] text-cyan-400 font-extrabold uppercase tracking-wider flex items-center justify-center gap-1">
               <Laptop className="w-3 h-3 text-cyan-400" />
               <span>YOUR LOCATION (LAPTOP)</span>
@@ -267,7 +267,20 @@ export const LiveLocationPage: React.FC = () => {
                 <div className="text-sm font-bold text-cyan-300 font-mono mt-0.5">
                   {userLocation.lat.toFixed(5)}, {userLocation.lng.toFixed(5)}
                 </div>
-                <div className="text-[10px] text-emerald-400 font-bold">🟢 Auto-GPS Locked</div>
+                <button
+                  onClick={() => {
+                    if (selectedDevice?.last_latitude && selectedDevice?.last_longitude) {
+                      setUserLocation({
+                        lat: selectedDevice.last_latitude,
+                        lng: selectedDevice.last_longitude
+                      });
+                    }
+                  }}
+                  className="mt-1 py-0.5 px-2 bg-emerald-600/30 hover:bg-emerald-600/50 text-emerald-300 border border-emerald-500/40 rounded text-[10px] font-bold transition-all mx-auto"
+                  title="Zero-calibrate laptop location to phone's satellite GPS"
+                >
+                  🎯 Calibrate: Side-by-Side (0m)
+                </button>
               </>
             ) : (
               <div className="text-[11px] text-slate-400 mt-1">
