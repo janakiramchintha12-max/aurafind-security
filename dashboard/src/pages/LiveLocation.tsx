@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, Circle, Polyline, useMapEvents } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, Circle, Polyline } from 'react-leaflet';
 import L from 'leaflet';
-import { Smartphone, Battery, MapPin, RefreshCw, Navigation, Compass, ExternalLink, ShieldCheck, Gauge, Eye, Radio, Laptop, Crosshair, Target, Info } from 'lucide-react';
+import { Smartphone, MapPin, RefreshCw, Navigation, Compass, Eye, Radio, Laptop, ShieldCheck, Target, CheckCircle2 } from 'lucide-react';
 import { devicesApi, commandsApi, connectWebSocket } from '../services/api';
 import { Device } from '../types';
 
@@ -63,32 +63,43 @@ function getCompassDirection(bearing: number): string {
   return directions[idx];
 }
 
-// Map Click Listener to manually drop Laptop pin
-function MapClickHandler({ onLocationSelect }: { onLocationSelect: (lat: number, lng: number) => void }) {
-  useMapEvents({
-    click(e) {
-      onLocationSelect(e.latlng.lat, e.latlng.lng);
-    }
-  });
-  return null;
-}
-
 export const LiveLocationPage: React.FC = () => {
   const [devices, setDevices] = useState<Device[]>([]);
   const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
-  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number; accuracy?: number } | null>(null);
   const [mapTheme, setMapTheme] = useState<'satellite' | 'dark' | 'street'>('satellite');
   const [loading, setLoading] = useState(true);
 
-  // Set laptop location to starting local base (near phone's real neighborhood)
-  const calibrateLaptopToLocalBase = () => {
-    if (selectedDevice?.last_latitude && selectedDevice?.last_longitude) {
-      setUserLocation({
-        lat: selectedDevice.last_latitude,
-        lng: selectedDevice.last_longitude
-      });
+  // 1. Automatic Real-Time Laptop GPS via Browser Geolocation API
+  useEffect(() => {
+    if ('geolocation' in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          setUserLocation({
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+            accuracy: pos.coords.accuracy
+          });
+        },
+        (err) => console.log('Laptop geolocation error:', err),
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      );
+
+      const watchId = navigator.geolocation.watchPosition(
+        (pos) => {
+          setUserLocation({
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+            accuracy: pos.coords.accuracy
+          });
+        },
+        (err) => console.log('Laptop geolocation watch error:', err),
+        { enableHighAccuracy: true, maximumAge: 1000 }
+      );
+
+      return () => navigator.geolocation.clearWatch(watchId);
     }
-  };
+  }, []);
 
   const fetchDevices = async () => {
     try {
@@ -116,16 +127,6 @@ export const LiveLocationPage: React.FC = () => {
 
     return () => cleanup();
   }, []);
-
-  // Default Laptop location to local base if unset
-  useEffect(() => {
-    if (!userLocation && selectedDevice?.last_latitude && selectedDevice?.last_longitude) {
-      setUserLocation({
-        lat: selectedDevice.last_latitude,
-        lng: selectedDevice.last_longitude
-      });
-    }
-  }, [selectedDevice]);
 
   const mappedDevices = devices.filter((d) => d.last_latitude != null && d.last_longitude != null);
   
@@ -177,6 +178,8 @@ export const LiveLocationPage: React.FC = () => {
 
   const mapCenter: [number, number] = selectedDevice?.last_latitude && selectedDevice?.last_longitude
     ? [selectedDevice.last_latitude, selectedDevice.last_longitude]
+    : userLocation
+    ? [userLocation.lat, userLocation.lng]
     : [14.0415, 79.2625];
 
   return (
@@ -187,10 +190,10 @@ export const LiveLocationPage: React.FC = () => {
         <div>
           <h1 className="text-2xl font-black text-white tracking-wide flex items-center space-x-2">
             <Radio className="w-6 h-6 text-cyan-400 animate-pulse" />
-            <span>Tactical Multi-Device Live Location Navigator</span>
+            <span>Tactical Dual-GPS Proximity Rangefinder</span>
           </h1>
           <p className="text-sm text-slate-400">
-            Real Dual-Point GPS Positioning: Displays your Laptop & Target Mobile on Live Map
+            Real-time live distance & bearing calculation between your Laptop and Target Mobile Phone
           </p>
         </div>
 
@@ -225,15 +228,6 @@ export const LiveLocationPage: React.FC = () => {
           </div>
 
           <button
-            onClick={calibrateLaptopToLocalBase}
-            className="flex items-center space-x-1.5 px-3 py-2 bg-emerald-600/30 hover:bg-emerald-600/40 text-emerald-300 border border-emerald-500/40 font-bold rounded-xl text-xs shadow-lg transition-all"
-            title="Set laptop home base to current spot"
-          >
-            <Target className="w-3.5 h-3.5 text-emerald-400" />
-            <span>📍 Set Laptop Base (Here)</span>
-          </button>
-
-          <button
             onClick={handleLocateFresh}
             className="flex items-center space-x-1.5 px-3 py-2 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold rounded-xl text-xs shadow-lg shadow-cyan-600/20"
           >
@@ -262,7 +256,7 @@ export const LiveLocationPage: React.FC = () => {
             </div>
           </div>
 
-          {/* User / Laptop Position Info with 1-Click Detect Button */}
+          {/* User / Laptop Position Info */}
           <div className="bg-slate-900/70 p-2.5 rounded-xl border border-slate-700/60 text-center">
             <div className="text-[10px] text-cyan-400 font-extrabold uppercase tracking-wider flex items-center justify-center gap-1">
               <Laptop className="w-3 h-3 text-cyan-400" />
@@ -273,22 +267,18 @@ export const LiveLocationPage: React.FC = () => {
                 <div className="text-sm font-bold text-cyan-300 font-mono mt-0.5">
                   {userLocation.lat.toFixed(5)}, {userLocation.lng.toFixed(5)}
                 </div>
-                <div className="text-[10px] text-emerald-400 font-bold">🟢 Base Locked</div>
+                <div className="text-[10px] text-emerald-400 font-bold">🟢 Auto-GPS Locked</div>
               </>
             ) : (
-              <button
-                onClick={calibrateLaptopToLocalBase}
-                className="mt-1 px-2.5 py-1 bg-cyan-600 hover:bg-cyan-500 text-white text-[11px] font-bold rounded-lg flex items-center justify-center space-x-1 mx-auto shadow"
-              >
-                <Crosshair className="w-3 h-3" />
-                <span>Set Base Spot</span>
-              </button>
+              <div className="text-[11px] text-slate-400 mt-1">
+                Detecting browser GPS...
+              </div>
             )}
           </div>
 
           {/* Real Exact Proximity Distance */}
           <div className="bg-slate-900/70 p-2.5 rounded-xl border border-slate-700/60 text-center">
-            <div className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider">REAL PROXIMITY DISTANCE</div>
+            <div className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider">EXACT LIVE DISTANCE</div>
             <div className={`text-2xl font-black ${
               distanceMeters != null
                 ? distanceMeters <= 50
@@ -348,30 +338,29 @@ export const LiveLocationPage: React.FC = () => {
               href={googleMapsUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="py-1.5 px-3 bg-cyan-600 hover:bg-cyan-500 text-white font-bold rounded-lg text-xs flex items-center justify-center space-x-1 shadow-md transition-all"
+              className="py-1.5 px-3 bg-cyan-600/30 hover:bg-cyan-600/40 text-cyan-300 border border-cyan-500/40 font-bold rounded-lg text-xs flex items-center justify-center space-x-1 transition-all"
             >
-              <ExternalLink className="w-3.5 h-3.5" />
-              <span>Google Directions</span>
+              <Navigation className="w-3.5 h-3.5" />
+              <span>Live Walk Guide</span>
             </a>
           </div>
 
         </div>
       )}
 
-      {/* Main Map & Fleet Container */}
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 h-[65vh]">
+      {/* Main Map & Device List Layout */}
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 h-[650px]">
         
-        {/* Device selector list */}
-        <div className="lg:col-span-1 bg-slate-800/80 border border-slate-700/60 rounded-2xl p-4 overflow-y-auto space-y-3 shadow-xl">
-          <div className="flex items-center justify-between">
-            <h3 className="text-xs font-bold text-slate-400 tracking-wider uppercase">Fleet Devices ({mappedDevices.length}/{devices.length})</h3>
-            <span className="text-[10px] bg-emerald-500/20 text-emerald-300 font-bold px-2 py-0.5 rounded-full">ACTIVE</span>
+        {/* Left Side: Device Selection & Sensor HUD */}
+        <div className="bg-slate-800/80 border border-slate-700/60 rounded-2xl p-4 flex flex-col space-y-3 overflow-y-auto">
+          <div className="text-xs font-black uppercase text-slate-400 tracking-wider flex items-center justify-between">
+            <span>Tracked Units</span>
+            <span className="text-cyan-400 font-bold">{mappedDevices.length} / {devices.length} with GPS</span>
           </div>
-          
-          {devices.map((dev) => {
-            const hasLoc = dev.last_latitude != null && dev.last_longitude != null;
-            const isSelected = selectedDevice?.id === dev.id;
 
+          {devices.map((dev) => {
+            const isSelected = selectedDevice?.id === dev.id;
+            const hasLoc = dev.last_latitude != null && dev.last_longitude != null;
             return (
               <div
                 key={dev.id}
@@ -396,7 +385,7 @@ export const LiveLocationPage: React.FC = () => {
                     <span className="font-bold text-slate-300">{dev.battery_pct}%</span>
                   </div>
                   <div className="font-mono text-[11px] text-cyan-300">
-                    {hasLoc ? `${dev.last_latitude?.toFixed(5)}, ${dev.last_longitude?.toFixed(5)}` : 'No Signal Recorded'}
+                    {hasLoc ? `${dev.last_latitude?.toFixed(5)}, ${dev.last_longitude?.toFixed(5)}` : 'Signal Syncing'}
                   </div>
                 </div>
               </div>
@@ -404,12 +393,12 @@ export const LiveLocationPage: React.FC = () => {
           })}
 
           <div className="p-3 bg-slate-900/80 rounded-xl border border-slate-800 text-[11px] text-slate-400 space-y-1">
-            <div className="font-bold text-cyan-300 flex items-center gap-1">
-              <Info className="w-3.5 h-3.5" />
-              <span>Interactive Positioning</span>
+            <div className="font-bold text-emerald-400 flex items-center gap-1">
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              <span>Real-Time Distance Radar</span>
             </div>
             <p>
-              Click anywhere on the map to set your laptop base, or click <span className="text-emerald-300 font-bold">"📍 Set Laptop Base (Here)"</span> at the top. As you carry your phone away, watch the distance and arrow update live!
+              Your laptop's real GPS is locked automatically. As you move your phone, the distance and directional arrow update in real time with high precision!
             </p>
           </div>
         </div>
@@ -423,15 +412,12 @@ export const LiveLocationPage: React.FC = () => {
               url={tileLayerUrls[mapTheme]}
             />
 
-            {/* Click anywhere on map to set Laptop position */}
-            <MapClickHandler onLocationSelect={(lat, lng) => setUserLocation({ lat, lng })} />
-
             {/* Marker 1: USER / LAPTOP LOCATION (Cyan Marker) */}
             {userLocation && (
               <Marker position={[userLocation.lat, userLocation.lng]} icon={userRadarIcon}>
                 <Popup>
                   <div className="p-1 space-y-1 text-slate-900 font-sans">
-                    <div className="font-bold text-sm text-cyan-700">💻 Your Location (Laptop Base)</div>
+                    <div className="font-bold text-sm text-cyan-700">💻 Your Location (Laptop GPS)</div>
                     <div className="text-xs font-mono">📍 {userLocation.lat.toFixed(5)}, {userLocation.lng.toFixed(5)}</div>
                   </div>
                 </Popup>
