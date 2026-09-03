@@ -1,7 +1,14 @@
 import axios from 'axios';
 import { Device, LocationRecord, Command, Geofence, GeofenceEvent, AuditLog, Snapshot } from '../types';
 
-const API_BASE_URL = 'http://127.0.0.1:8000/api/v1';
+const getBaseUrl = () => {
+  if (typeof window !== 'undefined') {
+    return `${window.location.origin}/api/v1`;
+  }
+  return '/api/v1';
+};
+
+const API_BASE_URL = getBaseUrl();
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -101,6 +108,17 @@ export const snapshotsApi = {
   },
 };
 
+export const cameraApi = {
+  getLatestFrame: async (deviceId: string) => {
+    const res = await api.get(`/devices/${deviceId}/camera/latest`);
+    return res.data;
+  },
+  triggerCapture: async (deviceId: string, facing: string = 'FRONT') => {
+    const res = await api.post(`/devices/${deviceId}/camera/capture`, { facing });
+    return res.data;
+  }
+};
+
 export const geofencesApi = {
   list: async (): Promise<Geofence[]> => {
     const res = await api.get('/geofences');
@@ -140,19 +158,26 @@ export function connectWebSocket(onMessage: (data: any) => void): () => void {
   const token = localStorage.getItem('token');
   if (!token) return () => {};
 
-  const wsUrl = `ws://127.0.0.1:8000/api/v1/ws?token=${token}`;
-  const ws = new WebSocket(wsUrl);
+  const host = typeof window !== 'undefined' ? window.location.host : '127.0.0.1:8000';
+  const protocol = typeof window !== 'undefined' && window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const wsUrl = `${protocol}//${host}/api/v1/ws?token=${token}`;
+  
+  try {
+    const ws = new WebSocket(wsUrl);
 
-  ws.onmessage = (event) => {
-    try {
-      const data = JSON.parse(event.data);
-      onMessage(data);
-    } catch (e) {
-      console.error('Failed to parse WS message', e);
-    }
-  };
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        onMessage(data);
+      } catch (e) {
+        console.error('Failed to parse WS message', e);
+      }
+    };
 
-  return () => {
-    ws.close();
-  };
+    return () => {
+      ws.close();
+    };
+  } catch (e) {
+    return () => {};
+  }
 }
