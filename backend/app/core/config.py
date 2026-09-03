@@ -10,7 +10,10 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30
     
     # Database
-    DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./findmydevice.db")
+    DATABASE_URL: str = os.getenv(
+        "DATABASE_URL", 
+        "sqlite:////tmp/findmydevice.db" if os.getenv("VERCEL") or os.getenv("AWS_LAMBDA_FUNCTION_NAME") else "sqlite:///./findmydevice.db"
+    )
     
     # CORS
     BACKEND_CORS_ORIGINS: list[str] = [
