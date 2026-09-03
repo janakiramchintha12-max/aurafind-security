@@ -14,7 +14,7 @@ RUN npm run build
 FROM python:3.11-slim
 WORKDIR /app
 
-# Install dependencies
+# Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
@@ -31,8 +31,8 @@ COPY --from=frontend-builder /app/dashboard/dist /app/backend/dashboard_dist
 
 # Environment variables
 ENV PYTHONPATH="/app/backend"
-ENV PORT=8000
-EXPOSE 8000
+ENV PORT=10000
+EXPOSE 10000
 
-# Run Uvicorn server
-CMD uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}
+# Run Uvicorn server respecting Render's dynamic PORT
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-10000}"]
