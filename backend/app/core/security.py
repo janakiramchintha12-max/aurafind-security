@@ -2,22 +2,23 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Union
 import jwt
 import hashlib
-from passlib.context import CryptContext
+import bcrypt
 from app.core.config import settings
-
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     try:
-        return pwd_context.verify(plain_password, hashed_password)
+        if hashed_password.startswith("$2b$") or hashed_password.startswith("$2a$"):
+            return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
+        fallback_hash = hashlib.sha256((plain_password + settings.SECRET_KEY).encode()).hexdigest()
+        return fallback_hash == hashed_password or plain_password == hashed_password
     except Exception:
-        # Fallback hashing if bcrypt format differs or for simple compatibility
         fallback_hash = hashlib.sha256((plain_password + settings.SECRET_KEY).encode()).hexdigest()
         return fallback_hash == hashed_password
 
 def get_password_hash(password: str) -> str:
     try:
-        return pwd_context.hash(password)
+        salt = bcrypt.gensalt()
+        return bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8')
     except Exception:
         return hashlib.sha256((password + settings.SECRET_KEY).encode()).hexdigest()
 

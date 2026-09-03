@@ -6,8 +6,52 @@ from app.api.v1.endpoints import auth, devices, locations, commands, geofences, 
 from app.services.websocket_manager import manager
 from app.core.security import decode_token
 
-# Initialize Database tables
+# Initialize Database tables and seed default admin
 Base.metadata.create_all(bind=engine)
+
+def seed_default_admin():
+    from app.database.session import SessionLocal
+    from app.models.user import User
+    from app.models.device import Device
+    from app.core.security import get_password_hash
+
+    db = SessionLocal()
+    try:
+        admin_user = db.query(User).filter(User.email == "admin").first()
+        if not admin_user:
+            admin_user = User(
+                id="default-admin-uuid",
+                email="admin",
+                hashed_password=get_password_hash("1234"),
+                full_name="Admin User"
+            )
+            db.add(admin_user)
+            db.commit()
+            db.refresh(admin_user)
+
+        # Ensure Janaki's phone is pre-registered
+        target_device_id = "bdca7649-e699-4d57-a59a-e80a4db9e1de"
+        device = db.query(Device).filter(Device.id == target_device_id).first()
+        if not device:
+            device = Device(
+                id=target_device_id,
+                user_id=admin_user.id,
+                device_name="janaki edge 50 fusion",
+                device_model="moto edge 50 fusion",
+                android_version="14.0",
+                app_version="1.0.0",
+                device_token="ca65a717-1185-417b-b8fc-32289812d8eb",
+                battery_pct=85.0,
+                status="ONLINE"
+            )
+            db.add(device)
+            db.commit()
+    except Exception as e:
+        print("Seed error:", e)
+    finally:
+        db.close()
+
+seed_default_admin()
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
