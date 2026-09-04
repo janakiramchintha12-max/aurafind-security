@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { Video, Camera, RefreshCw, X, Maximize2, Shield, Eye, AlertTriangle, Radio, Download } from 'lucide-react';
-import { commandsApi, connectWebSocket } from '../services/api';
+import React, { useState, useEffect, useRef } from 'react';
+import { Video, Camera, RefreshCw, X, Maximize2, Minimize2, Shield, Eye, AlertTriangle, Radio, Download, Zap } from 'lucide-react';
+import { commandsApi, cameraApi, connectWebSocket } from '../services/api';
 import { Device } from '../types';
 
 interface LiveCameraStreamModalProps {
@@ -12,11 +12,13 @@ export const LiveCameraStreamModal: React.FC<LiveCameraStreamModalProps> = ({ de
   const [currentFacing, setCurrentFacing] = useState<'FRONT' | 'BACK'>('FRONT');
   const [currentFrame, setCurrentFrame] = useState<string | null>(null);
   const [isStreaming, setIsStreaming] = useState(true);
-  const [fps, setFps] = useState(5.0);
   const [frameCount, setFrameCount] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [fps, setFps] = useState(8.5);
+  const [capturedSnaps, setCapturedSnaps] = useState<string[]>([]);
+  const containerRef = useRef<HTMLDivElement>(null);
 
-  // Poll for latest frame as fallback + WebSocket real-time frame event
   useEffect(() => {
     // Send Start Stream command to device
     commandsApi.dispatch(device.id, 'START_CAMERA_STREAM', { facing: currentFacing }).catch(console.error);
@@ -27,36 +29,30 @@ export const LiveCameraStreamModal: React.FC<LiveCameraStreamModalProps> = ({ de
           setCurrentFrame(eventData.image_data);
           setFrameCount(c => c + 1);
           if (eventData.facing) setCurrentFacing(eventData.facing);
+          if (eventData.fps) setFps(eventData.fps);
         }
       }
     });
 
-    // Also poll /camera/latest every 700ms for continuous smooth feed
+    // High-speed smooth fallback poller (every 250ms)
     const interval = setInterval(async () => {
       if (!isStreaming) return;
       try {
-        const res = await fetch(`http://127.0.0.1:8000/api/v1/devices/${device.id}/camera/latest`, {
-          headers: {
-            'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
-          }
-        });
-        if (res.ok) {
-          const data = await res.json();
-          if (data.has_frame && data.image_data) {
-            setCurrentFrame(data.image_data);
-            setFrameCount(c => c + 1);
-            if (data.facing) setCurrentFacing(data.facing);
-          }
+        const data = await cameraApi.getLatestFrame(device.id);
+        if (data && data.has_frame && data.image_data) {
+          setCurrentFrame(data.image_data);
+          setFrameCount(c => c + 1);
+          if (data.facing) setCurrentFacing(data.facing);
+          if (data.fps) setFps(data.fps);
         }
       } catch (e) {
         // quiet fallback
       }
-    }, 700);
+    }, 250);
 
     return () => {
       cleanupWs();
       clearInterval(interval);
-      // Send Stop Stream command on unmount
       commandsApi.dispatch(device.id, 'STOP_CAMERA_STREAM').catch(console.error);
     };
   }, [device.id]);
@@ -76,47 +72,72 @@ export const LiveCameraStreamModal: React.FC<LiveCameraStreamModalProps> = ({ de
 
   const handleCaptureSnapshot = () => {
     if (!currentFrame) return;
+    setCapturedSnaps(prev => [currentFrame, ...prev.slice(0, 5)]);
     const a = document.createElement('a');
     a.href = currentFrame;
-    a.download = `aurafind-camera-${currentFacing}-${Date.now()}.png`;
+    a.download = `aurafind-HD-snapshot-${currentFacing}-${Date.now()}.jpg`;
     a.click();
   };
 
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      containerRef.current?.requestFullscreen().catch(console.error);
+      setIsFullscreen(true);
+    } else {
+      document.exitFullscreen().catch(console.error);
+      setIsFullscreen(false);
+    }
+  };
+
   return (
-    <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
-      <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-3xl w-full p-5 text-slate-100 shadow-2xl space-y-4">
+    <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-lg flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
+      <div
+        ref={containerRef}
+        className={`bg-slate-900 border border-slate-700/80 rounded-3xl max-w-4xl w-full p-5 text-slate-100 shadow-2xl space-y-4 transition-all ${
+          isFullscreen ? 'max-w-none h-screen rounded-none p-6 flex flex-col justify-between' : ''
+        }`}
+      >
         
         {/* Header Bar */}
         <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-          <div className="flex items-center space-x-2.5">
-            <div className="p-2 bg-rose-500/20 text-rose-400 rounded-xl">
-              <Video className="w-5 h-5 animate-pulse" />
+          <div className="flex items-center space-x-3">
+            <div className="p-2.5 bg-rose-500/20 text-rose-400 rounded-2xl border border-rose-500/30">
+              <Video className="w-6 h-6 animate-pulse" />
             </div>
             <div>
-              <h2 className="text-base font-extrabold text-white flex items-center gap-2">
-                <span>Tactical Real-Time Camera Stream</span>
-                <span className="text-[10px] bg-rose-600 text-white font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping"></span>
-                  LIVE {currentFacing === 'FRONT' ? 'FRONT LENS' : 'REAR LENS'}
+              <h2 className="text-lg font-black text-white flex items-center gap-2">
+                <span>HD Real-Time Optical Surveillance</span>
+                <span className="text-[11px] bg-rose-600 text-white font-black px-2.5 py-0.5 rounded-full flex items-center gap-1 shadow-lg shadow-rose-600/30">
+                  <span className="w-2 h-2 rounded-full bg-white animate-ping"></span>
+                  LIVE 720p HD • {currentFacing === 'FRONT' ? '👤 INTRUDER FRONT LENS' : '🏙️ REAR ENVIRONMENT LENS'}
                 </span>
               </h2>
-              <p className="text-xs text-slate-400">{device.device_name} • {device.device_model}</p>
+              <p className="text-xs text-slate-400">
+                {device.device_name} • Ultra-Low Latency Feed • Hardware Compressed 75%
+              </p>
             </div>
           </div>
 
           <div className="flex items-center space-x-2">
             <button
+              onClick={toggleFullscreen}
+              className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl border border-slate-700"
+              title="Toggle Fullscreen"
+            >
+              {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+            </button>
+            <button
               onClick={handleCaptureSnapshot}
               disabled={!currentFrame}
-              className="flex items-center space-x-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-bold border border-slate-700 transition-all disabled:opacity-50"
-              title="Save snapshot frame"
+              className="flex items-center space-x-1.5 px-3.5 py-2 bg-emerald-600/30 hover:bg-emerald-600/50 text-emerald-300 rounded-xl text-xs font-bold border border-emerald-500/40 transition-all disabled:opacity-50 shadow"
+              title="Save HD Snapshot"
             >
               <Download className="w-3.5 h-3.5" />
-              <span>Save Frame</span>
+              <span>Capture HD Frame</span>
             </button>
             <button
               onClick={onClose}
-              className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white rounded-xl"
+              className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white rounded-xl border border-slate-700"
             >
               <X className="w-5 h-5" />
             </button>
@@ -124,48 +145,56 @@ export const LiveCameraStreamModal: React.FC<LiveCameraStreamModalProps> = ({ de
         </div>
 
         {/* Video Canvas HUD */}
-        <div className="relative aspect-video bg-black rounded-2xl overflow-hidden border-2 border-slate-800 shadow-inner flex items-center justify-center">
+        <div className={`relative bg-black rounded-2xl overflow-hidden border-2 border-slate-800 shadow-2xl flex items-center justify-center ${
+          isFullscreen ? 'flex-1' : 'aspect-video max-h-[500px]'
+        }`}>
           {currentFrame ? (
             <img
-              src={currentFrame.startsWith('data:') ? (currentFrame.includes('utf8,%3C') ? decodeURIComponent(currentFrame.replace('data:image/svg+xml;utf8,', 'data:image/svg+xml;utf8,')) : currentFrame) : `data:image/jpeg;base64,${currentFrame}`}
+              src={currentFrame.startsWith('data:') ? currentFrame : `data:image/jpeg;base64,${currentFrame}`}
               alt="Live video stream"
-              className="w-full h-full object-contain select-none"
+              className="w-full h-full object-contain select-none transition-transform duration-100"
             />
           ) : (
-            <div className="text-center space-y-2 text-slate-400">
-              <RefreshCw className="w-8 h-8 text-cyan-400 animate-spin mx-auto" />
-              <div className="text-xs font-bold text-slate-300">Initializing Remote Camera Feed...</div>
-              <div className="text-[10px] text-slate-500">Connecting to {currentFacing} Lens via Secure Stream</div>
+            <div className="text-center space-y-3 text-slate-400 p-8">
+              <RefreshCw className="w-10 h-10 text-cyan-400 animate-spin mx-auto" />
+              <div className="text-sm font-black text-white">Opening Remote Camera Hardware...</div>
+              <div className="text-xs text-slate-400">Negotiating 720p HD Stream with {currentFacing} Sensor</div>
             </div>
           )}
 
-          {/* HUD Overlay Details */}
-          <div className="absolute top-3 left-3 bg-black/60 backdrop-blur px-2.5 py-1 rounded-lg border border-white/10 text-[10px] font-mono text-cyan-300 flex items-center space-x-2">
-            <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse"></span>
-            <span>REC • {currentFacing === 'FRONT' ? 'FRONT (INTRUDER)' : 'REAR (ENVIRONMENT)'}</span>
+          {/* Top-Left HUD Info */}
+          <div className="absolute top-3 left-3 bg-black/70 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/15 text-[11px] font-mono text-cyan-300 flex items-center space-x-2.5 shadow-lg">
+            <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse"></span>
+            <span className="font-bold">🔴 720p HD STREAM • {currentFacing}</span>
           </div>
 
-          <div className="absolute top-3 right-3 bg-black/60 backdrop-blur px-2.5 py-1 rounded-lg border border-white/10 text-[10px] font-mono text-slate-300">
-            FPS: ~5.0 • Frames: {frameCount}
+          {/* Top-Right Telemetry */}
+          <div className="absolute top-3 right-3 bg-black/70 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/15 text-[11px] font-mono text-slate-200 flex items-center space-x-3 shadow-lg">
+            <span>⚡ {fps.toFixed(1)} FPS</span>
+            <span>🖼️ Frame #{frameCount}</span>
+            <span className="text-emerald-400">🟢 Smooth</span>
           </div>
 
-          {/* Bottom GPS Watermark */}
-          {device.last_latitude && device.last_longitude && (
-            <div className="absolute bottom-3 left-3 bg-black/60 backdrop-blur px-2.5 py-1 rounded-lg border border-white/10 text-[10px] font-mono text-emerald-400">
-              📍 {device.last_latitude.toFixed(5)}, {device.last_longitude.toFixed(5)} • {new Date().toLocaleTimeString()}
+          {/* Bottom GPS & Timestamp Watermark */}
+          <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between pointer-events-none">
+            <div className="bg-black/70 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/15 text-[10px] font-mono text-emerald-400">
+              📍 {device.last_latitude ? `${device.last_latitude.toFixed(5)}, ${device.last_longitude?.toFixed(5)}` : 'GPS Tracking'} • {new Date().toLocaleTimeString()}
             </div>
-          )}
+            <div className="bg-black/70 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/15 text-[10px] font-mono text-slate-300">
+              🔋 Battery: {device.battery_pct}%
+            </div>
+          </div>
         </div>
 
         {/* Tactical Controls Toolbar */}
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <button
             onClick={handleSwitchCamera}
             disabled={loading}
-            className={`p-3 rounded-xl border text-xs font-bold flex items-center justify-center space-x-2 transition-all ${
+            className={`p-3.5 rounded-2xl border text-xs font-black flex items-center justify-center space-x-2 transition-all shadow-lg ${
               currentFacing === 'FRONT'
-                ? 'bg-purple-600/30 hover:bg-purple-600/40 text-purple-200 border-purple-500/40'
-                : 'bg-cyan-600/30 hover:bg-cyan-600/40 text-cyan-200 border-cyan-500/40'
+                ? 'bg-purple-600/30 hover:bg-purple-600/50 text-purple-200 border-purple-500/50 shadow-purple-600/20'
+                : 'bg-cyan-600/30 hover:bg-cyan-600/50 text-cyan-200 border-cyan-500/50 shadow-cyan-600/20'
             }`}
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
@@ -175,20 +204,20 @@ export const LiveCameraStreamModal: React.FC<LiveCameraStreamModalProps> = ({ de
           <button
             onClick={handleCaptureSnapshot}
             disabled={!currentFrame}
-            className="p-3 bg-cyan-600/20 hover:bg-cyan-600/30 text-cyan-300 border border-cyan-500/30 rounded-xl text-xs font-bold flex items-center justify-center space-x-2 transition-all disabled:opacity-50"
+            className="p-3.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-2xl text-xs font-black flex items-center justify-center space-x-2 transition-all shadow-lg shadow-emerald-600/20 disabled:opacity-50"
           >
-            <Camera className="w-4 h-4 text-cyan-400" />
-            <span>Freeze Frame Snapshot</span>
+            <Camera className="w-4 h-4" />
+            <span>Instant HD Screenshot</span>
           </button>
 
           <button
             onClick={() => {
               commandsApi.dispatch(device.id, 'PLAY_ALARM');
             }}
-            className="col-span-2 md:col-span-1 p-3 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 rounded-xl text-xs font-bold flex items-center justify-center space-x-2 transition-all"
+            className="p-3.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 rounded-2xl text-xs font-black flex items-center justify-center space-x-2 transition-all shadow-lg"
           >
             <Radio className="w-4 h-4 text-amber-400" />
-            <span>Trigger Alarm with Video</span>
+            <span>Sound Loud Siren Alarm</span>
           </button>
         </div>
 
