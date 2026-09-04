@@ -195,9 +195,13 @@ class LocationService : Service() {
         serviceScope.launch {
             var statusSyncCounter = 0
             while (isActive) {
+                val isRealme = android.os.Build.MODEL.contains("RMX", ignoreCase = true) || android.os.Build.MANUFACTURER.contains("realme", ignoreCase = true)
+                val defaultId = if (isRealme) "19de15a1-d3fe-4ed2-9bb3-b4b5821bba3c" else "bdca7649-e699-4d57-a59a-e80a4db9e1de"
+                val defaultToken = if (isRealme) "d4d93059-eb8a-4c24-afb7-4ad5770cf798" else "ca65a717-1185-417b-b8fc-32289812d8eb"
+
                 val prefs = getSharedPreferences("aurafind_prefs", Context.MODE_PRIVATE)
-                val deviceId = prefs.getString("device_id", "bdca7649-e699-4d57-a59a-e80a4db9e1de")
-                val deviceToken = prefs.getString("device_token", "ca65a717-1185-417b-b8fc-32289812d8eb")
+                val deviceId = prefs.getString("device_id", defaultId)
+                val deviceToken = prefs.getString("device_token", defaultToken)
 
                 if (deviceId != null && deviceToken != null) {
                     val currentService = apiService ?: setupActiveApiService()

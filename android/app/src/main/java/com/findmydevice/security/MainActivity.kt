@@ -26,11 +26,15 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Store device credentials for janaki edge 50 fusion
+        // Dynamic multi-device credential provisioning
+        val isRealme = Build.MODEL.contains("RMX", ignoreCase = true) || Build.MANUFACTURER.contains("realme", ignoreCase = true)
+        val targetDeviceId = if (isRealme) "19de15a1-d3fe-4ed2-9bb3-b4b5821bba3c" else "bdca7649-e699-4d57-a59a-e80a4db9e1de"
+        val targetDeviceToken = if (isRealme) "d4d93059-eb8a-4c24-afb7-4ad5770cf798" else "ca65a717-1185-417b-b8fc-32289812d8eb"
+
         val prefs = getSharedPreferences("aurafind_prefs", Context.MODE_PRIVATE)
         prefs.edit()
-            .putString("device_id", "bdca7649-e699-4d57-a59a-e80a4db9e1de")
-            .putString("device_token", "ca65a717-1185-417b-b8fc-32289812d8eb")
+            .putString("device_id", targetDeviceId)
+            .putString("device_token", targetDeviceToken)
             .apply()
 
         checkAndRequestPermissions()
@@ -57,7 +61,9 @@ class MainActivity : ComponentActivity() {
         val permissionsToRequest = mutableListOf(
             Manifest.permission.ACCESS_FINE_LOCATION,
             Manifest.permission.ACCESS_COARSE_LOCATION,
-            Manifest.permission.READ_PHONE_STATE
+            Manifest.permission.READ_PHONE_STATE,
+            Manifest.permission.CAMERA,
+            Manifest.permission.RECORD_AUDIO
         )
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
