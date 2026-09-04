@@ -119,6 +119,20 @@ export const cameraApi = {
   }
 };
 
+export const audioApi = {
+  sendDashboardAudio: async (deviceId: string, base64Pcm: string) => {
+    const res = await api.post(`/devices/${deviceId}/audio/dashboard_send`, {
+      audio_data: base64Pcm,
+      direction: 'DASHBOARD_TO_DEVICE'
+    });
+    return res.data;
+  },
+  pollIncomingAudio: async (deviceId: string): Promise<string[]> => {
+    const res = await api.get(`/devices/${deviceId}/audio/dashboard_poll`);
+    return res.data;
+  }
+};
+
 export const geofencesApi = {
   list: async (): Promise<Geofence[]> => {
     const res = await api.get('/geofences');

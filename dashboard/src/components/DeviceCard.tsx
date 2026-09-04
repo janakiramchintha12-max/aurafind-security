@@ -12,9 +12,10 @@ interface DeviceCardProps {
   onSync: (deviceId: string) => void;
   onTakeSelfie?: (deviceId: string) => void;
   onOpenLiveCamera?: (device: Device) => void;
+  onOpenVoiceCall?: (device: Device) => void;
 }
 
-export const DeviceCard: React.FC<DeviceCardProps> = ({ device, onLocate, onRing, onStopRing, onToggleLostMode, onSync, onTakeSelfie, onOpenLiveCamera }) => {
+export const DeviceCard: React.FC<DeviceCardProps> = ({ device, onLocate, onRing, onStopRing, onToggleLostMode, onSync, onTakeSelfie, onOpenLiveCamera, onOpenVoiceCall }) => {
   const isOnline = device.status === 'ONLINE';
 
   return (
@@ -155,7 +156,15 @@ export const DeviceCard: React.FC<DeviceCardProps> = ({ device, onLocate, onRing
         </button>
       </div>
 
-      <div className="grid grid-cols-4 gap-2">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+        <button
+          onClick={() => onOpenVoiceCall && onOpenVoiceCall(device)}
+          className="flex items-center justify-center space-x-1 py-1.5 bg-emerald-600/30 hover:bg-emerald-600/40 text-emerald-200 border border-emerald-500/40 rounded-lg text-xs font-bold transition-all shadow"
+        >
+          <Phone className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
+          <span>Voice Call</span>
+        </button>
+
         <button
           onClick={() => onOpenLiveCamera && onOpenLiveCamera(device)}
           className="flex items-center justify-center space-x-1 py-1.5 bg-rose-600/30 hover:bg-rose-600/40 text-rose-200 border border-rose-500/40 rounded-lg text-xs font-bold transition-all"

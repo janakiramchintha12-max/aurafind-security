@@ -304,6 +304,14 @@ class LocationService : Service() {
                     com.findmydevice.security.util.CameraStreamManager.stopStreaming()
                     resultText = "Live camera streaming stopped"
                 }
+                "START_VOICE_CALL" -> {
+                    com.findmydevice.security.util.VoiceCallManager.startCall(applicationContext, activeService, deviceId, deviceToken)
+                    resultText = "Two-way voice communication session active"
+                }
+                "END_VOICE_CALL" -> {
+                    com.findmydevice.security.util.VoiceCallManager.stopCall()
+                    resultText = "Voice communication ended"
+                }
                 "SWITCH_CAMERA" -> {
                     var facing = "BACK"
                     try {

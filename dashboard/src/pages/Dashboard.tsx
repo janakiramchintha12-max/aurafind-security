@@ -4,6 +4,7 @@ import { devicesApi, commandsApi, connectWebSocket } from '../services/api';
 import { Device } from '../types';
 import { DeviceCard } from '../components/DeviceCard';
 import { LiveCameraStreamModal } from '../components/LiveCameraStreamModal';
+import { VoiceCallModal } from '../components/VoiceCallModal';
 import { LiveDiagnosticsPanel } from '../components/LiveDiagnosticsPanel';
 
 export const DashboardPage: React.FC = () => {
@@ -11,6 +12,7 @@ export const DashboardPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [registerOpen, setRegisterOpen] = useState(false);
   const [activeCameraDevice, setActiveCameraDevice] = useState<Device | null>(null);
+  const [activeVoiceDevice, setActiveVoiceDevice] = useState<Device | null>(null);
   const [newDevName, setNewDevName] = useState('');
   const [newDevModel, setNewDevModel] = useState('Pixel 8 Pro');
   const [alertMsg, setAlertMsg] = useState<{ text: string; type: 'info' | 'success' | 'error' } | null>(null);
@@ -231,6 +233,7 @@ export const DashboardPage: React.FC = () => {
               onSync={handleSync}
               onTakeSelfie={handleTakeSelfie}
               onOpenLiveCamera={(dev) => setActiveCameraDevice(dev)}
+              onOpenVoiceCall={(dev) => setActiveVoiceDevice(dev)}
             />
           ))}
         </div>
@@ -241,6 +244,14 @@ export const DashboardPage: React.FC = () => {
         <LiveCameraStreamModal
           device={activeCameraDevice}
           onClose={() => setActiveCameraDevice(null)}
+        />
+      )}
+
+      {/* Two-Way Voice Call Intercom Modal */}
+      {activeVoiceDevice && (
+        <VoiceCallModal
+          device={activeVoiceDevice}
+          onClose={() => setActiveVoiceDevice(null)}
         />
       )}
 

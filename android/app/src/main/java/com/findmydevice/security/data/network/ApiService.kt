@@ -102,6 +102,19 @@ interface ApiService {
         @Header("X-Device-Token") deviceToken: String,
         @Body request: CameraFrameRequest
     ): Response<Unit>
+
+    @POST("api/v1/devices/{device_id}/audio/chunk")
+    suspend fun pushAudioChunk(
+        @Path("device_id") deviceId: String,
+        @Header("X-Device-Token") deviceToken: String,
+        @Body request: Map<String, String>
+    ): Response<Unit>
+
+    @GET("api/v1/devices/{device_id}/audio/incoming")
+    suspend fun pollIncomingAudio(
+        @Path("device_id") deviceId: String,
+        @Header("X-Device-Token") deviceToken: String
+    ): Response<List<String>>
 }
 
 data class CameraFrameRequest(
