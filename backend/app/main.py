@@ -65,6 +65,27 @@ def seed_default_admin():
         else:
             device.user_id = janaki_user.id
             db.commit()
+
+        # Ensure Device #2 (Realme 13 5G) is pre-registered and linked to janakiram12
+        realme_device_id = "19de15a1-d3fe-4ed2-9bb3-b4b5821bba3c"
+        realme_dev = db.query(Device).filter(Device.id == realme_device_id).first()
+        if not realme_dev:
+            realme_dev = Device(
+                id=realme_device_id,
+                user_id=janaki_user.id,
+                device_name="Realme 13 5G",
+                device_model="Realme RMX5070",
+                android_version="14.0",
+                app_version="1.0.0",
+                device_token="d4d93059-eb8a-4c24-afb7-4ad5770cf798",
+                battery_pct=75.0,
+                status="ONLINE"
+            )
+            db.add(realme_dev)
+            db.commit()
+        else:
+            realme_dev.user_id = janaki_user.id
+            db.commit()
     except Exception as e:
         print("Seed error:", e)
     finally:
