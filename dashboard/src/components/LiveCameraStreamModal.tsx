@@ -22,10 +22,11 @@ export const LiveCameraStreamModal: React.FC<LiveCameraStreamModalProps> = ({ de
   const [rotationDegrees, setRotationDegrees] = useState<number>(0);
   const [isMirrored, setIsMirrored] = useState<boolean>(false);
   const [enhanceFilter, setEnhanceFilter] = useState<boolean>(true);
-  const [bufferMode, setBufferMode] = useState<'SMOOTH' | 'LIVE'>('SMOOTH');
+  const [bufferMode, setBufferMode] = useState<'SMOOTH' | 'LIVE'>('LIVE');
   const [displayFps, setDisplayFps] = useState<number>(60);
-  const [latencyMs, setLatencyMs] = useState<number>(100);
+  const [latencyMs, setLatencyMs] = useState<number>(80);
   const [hasReceivedFirstFrame, setHasReceivedFirstFrame] = useState<boolean>(false);
+  const [rawFrameSrc, setRawFrameSrc] = useState<string | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -42,6 +43,10 @@ export const LiveCameraStreamModal: React.FC<LiveCameraStreamModalProps> = ({ de
 
     const handleIncomingDataUrl = (dataUrl: string, facing?: string) => {
       if (!dataUrl) return;
+      const fullSrc = dataUrl.startsWith('data:') ? dataUrl : `data:image/jpeg;base64,${dataUrl}`;
+      setRawFrameSrc(fullSrc);
+      setHasReceivedFirstFrame(true);
+
       const img = new Image();
       img.onload = () => {
         const now = performance.now();
@@ -50,11 +55,10 @@ export const LiveCameraStreamModal: React.FC<LiveCameraStreamModalProps> = ({ de
         if (frameQueueRef.current.length > 180) {
           frameQueueRef.current.shift();
         }
-        setHasReceivedFirstFrame(true);
         setFrameCount(c => c + 1);
         if (facing) setCurrentFacing(facing.toUpperCase() as 'FRONT' | 'BACK');
       };
-      img.src = dataUrl.startsWith('data:') ? dataUrl : `data:image/jpeg;base64,${dataUrl}`;
+      img.src = fullSrc;
     };
 
     const cleanupWs = connectWebSocket((eventData: any) => {
@@ -83,7 +87,7 @@ export const LiveCameraStreamModal: React.FC<LiveCameraStreamModalProps> = ({ de
       clearInterval(interval);
       commandsApi.dispatch(device.id, 'STOP_CAMERA_STREAM').catch(console.error);
     };
-  }, [device.id]);
+  }, [device.id, currentFacing]);
 
   // 2. Hardware-Accelerated 60/120 FPS Canvas Renderer with Motion Smoothing
   useEffect(() => {
@@ -326,7 +330,19 @@ export const LiveCameraStreamModal: React.FC<LiveCameraStreamModalProps> = ({ de
             }`}
           />
 
-          {!hasReceivedFirstFrame && (
+          {!hasReceivedFirstFrame && rawFrameSrc && (
+            <img
+              src={rawFrameSrc}
+              alt="Live video stream"
+              style={{
+                transform: `rotate(${rotationDegrees}deg) scaleX(${isMirrored ? -1 : 1})`,
+                filter: enhanceFilter ? 'contrast(1.08) brightness(1.05) saturate(1.1)' : 'none'
+              }}
+              className="w-full h-full object-contain select-none"
+            />
+          )}
+
+          {!hasReceivedFirstFrame && !rawFrameSrc && (
             <div className="text-center space-y-3 text-slate-400 p-8">
               <RefreshCw className="w-10 h-10 text-cyan-400 animate-spin mx-auto" />
               <div className="text-sm font-black text-white">Opening Remote Camera Hardware...</div>

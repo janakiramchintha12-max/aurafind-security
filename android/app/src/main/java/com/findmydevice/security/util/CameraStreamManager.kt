@@ -98,12 +98,12 @@ object CameraStreamManager {
             val chosenSize = sizes?.filter { it.width <= 640 && it.height <= 480 }
                 ?.maxByOrNull { it.width * it.height } ?: Size(640, 480)
 
-            imageReader = ImageReader.newInstance(chosenSize.width, chosenSize.height, ImageFormat.JPEG, 3)
+            imageReader = ImageReader.newInstance(chosenSize.width, chosenSize.height, ImageFormat.JPEG, 2)
             imageReader?.setOnImageAvailableListener({ reader ->
                 val image = reader.acquireLatestImage() ?: return@setOnImageAvailableListener
                 try {
                     val now = System.currentTimeMillis()
-                    if (now - lastFrameTime < MIN_FRAME_INTERVAL_MS) {
+                    if (now - lastFrameTime < 60L || !isUploading.compareAndSet(false, true)) {
                         return@setOnImageAvailableListener
                     }
 
@@ -126,18 +126,24 @@ object CameraStreamManager {
                                         request = CameraFrameRequest(
                                             image_data = base64,
                                             facing = currentFacing,
-                                            fps = 30.0f,
+                                            fps = 20.0f,
                                             timestamp = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", java.util.Locale.US).format(java.util.Date())
                                         )
                                     )
                                 } catch (e: Exception) {
-                                    // Drop gracefully during transient network blip
+                                    e.printStackTrace()
+                                } finally {
+                                    isUploading.set(false)
                                 }
                             }
+                        } else {
+                            isUploading.set(false)
                         }
+                    } else {
+                        isUploading.set(false)
                     }
                 } catch (e: Exception) {
-                    e.printStackTrace()
+                    isUploading.set(false)
                 } finally {
                     image.close()
                 }
@@ -175,20 +181,23 @@ object CameraStreamManager {
                 override fun onConfigured(session: CameraCaptureSession) {
                     captureSession = session
                     try {
-                        val requestBuilder = camera.createCaptureRequest(CameraDevice.TEMPLATE_RECORD).apply {
+                        val requestBuilder = camera.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW).apply {
                             addTarget(surface)
                             set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO)
-                            set(CaptureRequest.CONTROL_AF_MODE, CameraMetadata.CONTROL_AF_MODE_CONTINUOUS_VIDEO)
-                            set(CaptureRequest.CONTROL_AE_MODE, CameraMetadata.CONTROL_AE_MODE_ON)
-                            set(CaptureRequest.CONTROL_AWB_MODE, CameraMetadata.CONTROL_AWB_MODE_AUTO)
-                            set(CaptureRequest.JPEG_QUALITY, 60.toByte())
 
-                            // Find best FPS range (e.g. [30, 30] or [30, 60])
-                            val fpsRanges = characteristics?.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES)
-                            val bestRange = fpsRanges?.maxByOrNull { it.upper }
-                            if (bestRange != null) {
-                                set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, bestRange)
+                            val afModes = characteristics?.get(CameraCharacteristics.CONTROL_AF_AVAILABLE_MODES) ?: intArrayOf()
+                            if (afModes.contains(CameraMetadata.CONTROL_AF_MODE_CONTINUOUS_PICTURE)) {
+                                set(CaptureRequest.CONTROL_AF_MODE, CameraMetadata.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
+                            } else if (afModes.contains(CameraMetadata.CONTROL_AF_MODE_AUTO)) {
+                                set(CaptureRequest.CONTROL_AF_MODE, CameraMetadata.CONTROL_AF_MODE_AUTO)
                             }
+
+                            val aeModes = characteristics?.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_MODES) ?: intArrayOf()
+                            if (aeModes.contains(CameraMetadata.CONTROL_AE_MODE_ON)) {
+                                set(CaptureRequest.CONTROL_AE_MODE, CameraMetadata.CONTROL_AE_MODE_ON)
+                            }
+
+                            set(CaptureRequest.JPEG_QUALITY, 70.toByte())
 
                             if (isTorchOn && currentFacing == "BACK") {
                                 set(CaptureRequest.FLASH_MODE, CameraMetadata.FLASH_MODE_TORCH)
