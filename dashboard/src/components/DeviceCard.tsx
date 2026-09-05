@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Smartphone, Battery, BatteryCharging, Wifi, WifiOff, Radio, MapPin, Bell, BellOff, RefreshCw, ChevronRight, Lock, AlertTriangle, Camera, Phone } from 'lucide-react';
+import { Smartphone, Battery, BatteryCharging, Wifi, WifiOff, Radio, MapPin, Bell, BellOff, RefreshCw, ChevronRight, Lock, AlertTriangle, Camera, Phone, Shield, FileText } from 'lucide-react';
 import { Device } from '../types';
 
 interface DeviceCardProps {
@@ -9,13 +9,15 @@ interface DeviceCardProps {
   onRing: (deviceId: string) => void;
   onStopRing: (deviceId: string) => void;
   onToggleLostMode: (deviceId: string, currentLostMode: boolean) => void;
-  onSync: (deviceId: string) => void;
+  onSync?: (deviceId: string) => void;
   onTakeSelfie?: (deviceId: string) => void;
   onOpenLiveCamera?: (device: Device) => void;
   onOpenVoiceCall?: (device: Device) => void;
+  onOpenTts?: (device: Device) => void;
+  onOpenPoliceReport?: (device: Device) => void;
 }
 
-export const DeviceCard: React.FC<DeviceCardProps> = ({ device, onLocate, onRing, onStopRing, onToggleLostMode, onSync, onTakeSelfie, onOpenLiveCamera, onOpenVoiceCall }) => {
+export const DeviceCard: React.FC<DeviceCardProps> = ({ device, onLocate, onRing, onStopRing, onToggleLostMode, onSync, onTakeSelfie, onOpenLiveCamera, onOpenVoiceCall, onOpenTts, onOpenPoliceReport }) => {
   const isOnline = device.status === 'ONLINE';
 
   return (
@@ -156,13 +158,21 @@ export const DeviceCard: React.FC<DeviceCardProps> = ({ device, onLocate, onRing
         </button>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
         <button
           onClick={() => onOpenVoiceCall && onOpenVoiceCall(device)}
           className="flex items-center justify-center space-x-1 py-1.5 bg-emerald-600/30 hover:bg-emerald-600/40 text-emerald-200 border border-emerald-500/40 rounded-lg text-xs font-bold transition-all shadow"
         >
           <Phone className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
           <span>Voice Call</span>
+        </button>
+
+        <button
+          onClick={() => onOpenTts && onOpenTts(device)}
+          className="flex items-center justify-center space-x-1 py-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-500/40 rounded-lg text-xs font-bold transition-all"
+        >
+          <Radio className="w-3.5 h-3.5 text-amber-400" />
+          <span>Megaphone</span>
         </button>
 
         <button
@@ -199,6 +209,14 @@ export const DeviceCard: React.FC<DeviceCardProps> = ({ device, onLocate, onRing
         >
           <MapPin className="w-3.5 h-3.5 text-cyan-400" />
           <span>Locate</span>
+        </button>
+
+        <button
+          onClick={() => onOpenPoliceReport && onOpenPoliceReport(device)}
+          className="col-span-2 flex items-center justify-center space-x-1 py-1.5 bg-slate-700/80 hover:bg-slate-700 text-slate-200 border border-slate-600/60 rounded-lg text-xs font-bold transition-all"
+        >
+          <Shield className="w-3.5 h-3.5 text-cyan-400" />
+          <span>📄 Police Theft Report</span>
         </button>
       </div>
 

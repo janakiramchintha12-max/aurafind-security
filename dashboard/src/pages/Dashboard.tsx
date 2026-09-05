@@ -5,6 +5,8 @@ import { Device } from '../types';
 import { DeviceCard } from '../components/DeviceCard';
 import { LiveCameraStreamModal } from '../components/LiveCameraStreamModal';
 import { VoiceCallModal } from '../components/VoiceCallModal';
+import { TtsVoiceModal } from '../components/TtsVoiceModal';
+import { PoliceReportModal } from '../components/PoliceReportModal';
 import { LiveDiagnosticsPanel } from '../components/LiveDiagnosticsPanel';
 
 export const DashboardPage: React.FC = () => {
@@ -13,6 +15,8 @@ export const DashboardPage: React.FC = () => {
   const [registerOpen, setRegisterOpen] = useState(false);
   const [activeCameraDevice, setActiveCameraDevice] = useState<Device | null>(null);
   const [activeVoiceDevice, setActiveVoiceDevice] = useState<Device | null>(null);
+  const [activeTtsDevice, setActiveTtsDevice] = useState<Device | null>(null);
+  const [activeReportDevice, setActiveReportDevice] = useState<Device | null>(null);
   const [newDevName, setNewDevName] = useState('');
   const [newDevModel, setNewDevModel] = useState('Pixel 8 Pro');
   const [alertMsg, setAlertMsg] = useState<{ text: string; type: 'info' | 'success' | 'error' } | null>(null);
@@ -234,6 +238,8 @@ export const DashboardPage: React.FC = () => {
               onTakeSelfie={handleTakeSelfie}
               onOpenLiveCamera={(dev) => setActiveCameraDevice(dev)}
               onOpenVoiceCall={(dev) => setActiveVoiceDevice(dev)}
+              onOpenTts={(dev) => setActiveTtsDevice(dev)}
+              onOpenPoliceReport={(dev) => setActiveReportDevice(dev)}
             />
           ))}
         </div>
@@ -252,6 +258,22 @@ export const DashboardPage: React.FC = () => {
         <VoiceCallModal
           device={activeVoiceDevice}
           onClose={() => setActiveVoiceDevice(null)}
+        />
+      )}
+
+      {/* Remote Voice Megaphone Modal */}
+      {activeTtsDevice && (
+        <TtsVoiceModal
+          device={activeTtsDevice}
+          onClose={() => setActiveTtsDevice(null)}
+        />
+      )}
+
+      {/* Police & Insurance Theft Report Modal */}
+      {activeReportDevice && (
+        <PoliceReportModal
+          device={activeReportDevice}
+          onClose={() => setActiveReportDevice(null)}
         />
       )}
 

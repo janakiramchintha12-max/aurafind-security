@@ -288,7 +288,7 @@ class LocationService : Service() {
                     } catch (e: Exception) {
                         if (!payload.isNullOrBlank()) message = payload
                     }
-                    AudioAlarmManager.speakText(applicationContext, message)
+                    com.findmydevice.security.util.TtsManager.speak(applicationContext, message)
                     resultText = "Voice warning broadcasted: $message"
                 }
                 "START_CAMERA_STREAM" -> {
