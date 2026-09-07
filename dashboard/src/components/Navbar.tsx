@@ -22,8 +22,6 @@ export const Navbar: React.FC<NavbarProps> = ({ user, setUser }) => {
   const navItems = [
     { label: 'Overview', path: '/', icon: LayoutDashboard },
     { label: 'Live Location', path: '/live', icon: MapPin },
-    { label: 'History', path: '/history', icon: History },
-    { label: 'Geofences', path: '/geofences', icon: Map },
     { label: 'Commands', path: '/commands', icon: Radio },
     { label: 'Audit Logs', path: '/audit', icon: ShieldAlert },
   ];

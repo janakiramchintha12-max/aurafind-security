@@ -52,8 +52,8 @@ export const App: React.FC = () => {
             <Route path="/" element={user ? <DashboardPage /> : <Navigate to="/login" replace />} />
             <Route path="/devices/:id" element={user ? <DeviceDetailsPage /> : <Navigate to="/login" replace />} />
             <Route path="/live" element={user ? <LiveLocationPage /> : <Navigate to="/login" replace />} />
-            <Route path="/history" element={user ? <LocationHistoryPage /> : <Navigate to="/login" replace />} />
-            <Route path="/geofences" element={user ? <GeofencesPage /> : <Navigate to="/login" replace />} />
+            <Route path="/history" element={<Navigate to="/live" replace />} />
+            <Route path="/geofences" element={<Navigate to="/live" replace />} />
             <Route path="/commands" element={user ? <CommandsPage /> : <Navigate to="/login" replace />} />
             <Route path="/audit" element={user ? <AuditLogsPage /> : <Navigate to="/login" replace />} />
 

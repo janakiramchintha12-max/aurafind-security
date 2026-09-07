@@ -78,6 +78,13 @@ def seed_default_admin():
         for d in moto_devs:
             db.delete(d)
         db.commit()
+
+        # PERMANENTLY PURGE all location history and geofences
+        from app.models.location import Location
+        from app.models.geofence import Geofence
+        db.query(Location).delete()
+        db.query(Geofence).delete()
+        db.commit()
     except Exception as e:
         logging.getLogger("aurafind.auth").warning(f"Development seed skipped: {e}")
     finally:
