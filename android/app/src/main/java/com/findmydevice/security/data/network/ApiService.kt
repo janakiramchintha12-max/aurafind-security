@@ -57,7 +57,27 @@ data class RemoteCommandDto(
     val created_at: String
 )
 
+data class AutoPairRequest(
+    val username: String,
+    val password: String,
+    val device_name: String,
+    val device_model: String,
+    val android_version: String = "14.0",
+    val app_version: String = "1.0.0"
+)
+
+data class AutoPairResponse(
+    val status: String,
+    val device_id: String,
+    val device_token: String,
+    val device_name: String,
+    val device_model: String? = null
+)
+
 interface ApiService {
+
+    @POST("api/v1/devices/auto-pair")
+    suspend fun autoPair(@Body request: AutoPairRequest): Response<AutoPairResponse>
 
     @POST("api/v1/devices/{device_id}/status")
     suspend fun updateDeviceStatus(

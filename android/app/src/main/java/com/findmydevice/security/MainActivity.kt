@@ -26,16 +26,6 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Primary Device Credential Provisioning (Realme 13 5G)
-        val targetDeviceId = "19de15a1-d3fe-4ed2-9bb3-b4b5821bba3c"
-        val targetDeviceToken = "d4d93059-eb8a-4c24-afb7-4ad5770cf798"
-
-        val prefs = getSharedPreferences("aurafind_prefs", Context.MODE_PRIVATE)
-        prefs.edit()
-            .putString("device_id", targetDeviceId)
-            .putString("device_token", targetDeviceToken)
-            .apply()
-
         checkAndRequestPermissions()
         checkOverlayPermission()
 

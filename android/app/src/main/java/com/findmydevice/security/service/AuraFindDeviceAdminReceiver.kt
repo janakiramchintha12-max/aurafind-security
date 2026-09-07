@@ -36,11 +36,8 @@ class AuraFindDeviceAdminReceiver : DeviceAdminReceiver() {
 
     private fun triggerIntruderAlertCapture(context: Context) {
         val prefs = context.getSharedPreferences("aurafind_prefs", Context.MODE_PRIVATE)
-        val defaultId = "19de15a1-d3fe-4ed2-9bb3-b4b5821bba3c"
-        val defaultToken = "d4d93059-eb8a-4c24-afb7-4ad5770cf798"
-
-        val deviceId = prefs.getString("device_id", defaultId) ?: defaultId
-        val deviceToken = prefs.getString("device_token", defaultToken) ?: defaultToken
+        val deviceId = prefs.getString("device_id", null) ?: return
+        val deviceToken = prefs.getString("device_token", null) ?: return
 
         // Create fast SVG intruder alert placeholder with timestamp
         val timeStr = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US).format(java.util.Date())

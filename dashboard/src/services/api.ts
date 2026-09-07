@@ -75,6 +75,10 @@ export const devicesApi = {
     const res = await api.post(`/devices/${id}/revoke`);
     return res.data;
   },
+  purgeAll: async (): Promise<any> => {
+    const res = await api.post('/devices/purge-all');
+    return res.data;
+  },
 };
 
 export const locationsApi = {

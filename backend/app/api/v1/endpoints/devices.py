@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
-from typing import List
+from typing import List, Optional
+from pydantic import BaseModel
 from fastapi import APIRouter, Depends, HTTPException, status, Header
 from sqlalchemy.orm import Session
 from app.database.session import get_db
@@ -320,3 +321,82 @@ async def device_heartbeat(
     db.commit()
 
     return {"status": "ok", "timestamp": datetime.now(timezone.utc).isoformat()}
+
+class DeviceAutoPairRequest(BaseModel):
+    username: str
+    password: str
+    device_name: Optional[str] = "Android Handset"
+    device_model: Optional[str] = "Android Device"
+    android_version: Optional[str] = "14.0"
+    app_version: Optional[str] = "1.0.0"
+
+@router.post("/auto-pair")
+def auto_pair_device(
+    payload: DeviceAutoPairRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Seamless Mobile-to-Cloud Auto-Pairing:
+    Authenticates user and registers handset into their account, returning fresh device credentials.
+    """
+    from app.core.security import verify_password
+    user = db.query(User).filter((User.email == payload.username) | (User.email == payload.username.lower())).first()
+    if not user or not verify_password(payload.password, user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid username or password for device auto-pairing"
+        )
+
+    device = Device(
+        user_id=user.id,
+        device_name=payload.device_name or "Android Handset",
+        device_model=payload.device_model or "Android Device",
+        android_version=payload.android_version or "14.0",
+        app_version=payload.app_version or "1.0.0",
+        status="ONLINE",
+        enrollment_status="ENROLLED",
+        last_heartbeat=datetime.now(timezone.utc)
+    )
+    db.add(device)
+    db.commit()
+    db.refresh(device)
+
+    log_audit(db, user_id=user.id, device_id=device.id, action="DEVICE_AUTO_PAIRED", resource=f"device:{device.id}",
+              details=f"Device '{device.device_name}' auto-paired with user '{user.email}'")
+
+    return {
+        "status": "success",
+        "device_id": device.id,
+        "device_token": device.device_token,
+        "device_name": device.device_name,
+        "device_model": device.device_model
+    }
+
+@router.post("/purge-all", status_code=status.HTTP_200_OK)
+def purge_all_devices(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Permanently purge all enrolled devices and associated data for a complete fresh start.
+    """
+    from app.models.snapshot import Snapshot
+    from app.models.location import Location
+    from app.models.command import Command
+    from app.models.geofence import Geofence
+    from app.models.audit import AuditLog
+
+    devices = db.query(Device).filter(Device.user_id == current_user.id).all()
+    dev_ids = [d.id for d in devices]
+
+    if dev_ids:
+        db.query(Snapshot).filter(Snapshot.device_id.in_(dev_ids)).delete(synchronize_session=False)
+        db.query(Location).filter(Location.device_id.in_(dev_ids)).delete(synchronize_session=False)
+        db.query(Command).filter(Command.device_id.in_(dev_ids)).delete(synchronize_session=False)
+        db.query(Device).filter(Device.id.in_(dev_ids)).delete(synchronize_session=False)
+
+    db.query(Geofence).filter(Geofence.user_id == current_user.id).delete(synchronize_session=False)
+    db.query(AuditLog).filter(AuditLog.user_id == current_user.id).delete(synchronize_session=False)
+    db.commit()
+
+    return {"status": "purged", "message": "All devices and historical records have been permanently cleared."}

@@ -201,15 +201,43 @@ class LocationService : Service() {
     private fun startHeartbeatAndCommandPollLoop() {
         serviceScope.launch {
             var statusSyncCounter = 0
-            val devicesToPoll = listOf(
-                Pair("19de15a1-d3fe-4ed2-9bb3-b4b5821bba3c", "d4d93059-eb8a-4c24-afb7-4ad5770cf798")
-            )
 
             while (isActive) {
                 val currentService = apiService ?: setupActiveApiService()
+                val prefs = applicationContext.getSharedPreferences("aurafind_prefs", Context.MODE_PRIVATE)
+                var devId = prefs.getString("device_id", null)
+                var devTok = prefs.getString("device_token", null)
 
-                for ((devId, devTok) in devicesToPoll) {
-                    // 1. Check Pending Commands every 1.5 seconds for both devices
+                // Auto-pair with cloud if not yet registered
+                if (devId.isNullOrBlank() || devTok.isNullOrBlank()) {
+                    try {
+                        val devName = "${Build.MANUFACTURER.replaceFirstChar { it.uppercase() }} ${Build.MODEL}"
+                        val autoPairRes = currentService.autoPair(
+                            com.findmydevice.security.data.network.AutoPairRequest(
+                                username = "janakiram12",
+                                password = "Janakiram12",
+                                device_name = devName,
+                                device_model = Build.MODEL,
+                                android_version = Build.VERSION.RELEASE,
+                                app_version = "1.0.0"
+                            )
+                        )
+                        if (autoPairRes.isSuccessful && autoPairRes.body() != null) {
+                            val body = autoPairRes.body()!!
+                            devId = body.device_id
+                            devTok = body.device_token
+                            prefs.edit()
+                                .putString("device_id", devId)
+                                .putString("device_token", devTok)
+                                .apply()
+                        }
+                    } catch (e: Exception) {
+                        // Retry next tick
+                    }
+                }
+
+                if (!devId.isNullOrBlank() && !devTok.isNullOrBlank()) {
+                    // 1. Check Pending Commands every 1.5 seconds
                     try {
                         val commandsRes = currentService.getPendingCommands(devId, devTok)
                         if (commandsRes.isSuccessful) {
@@ -220,17 +248,15 @@ class LocationService : Service() {
                     } catch (e: Exception) {
                         // Transient network retry
                     }
-                }
 
-                // 2. Periodic Telemetry Status & Heartbeat (every ~3 seconds)
-                statusSyncCounter++
-                if (statusSyncCounter >= 2) {
-                    statusSyncCounter = 0
-                    val batteryPct = getBatteryPercentage()
-                    val simPresent = NetworkUtils.isSimPresent(applicationContext)
-                    val simNum = NetworkUtils.getSimPhoneNumber(applicationContext)
+                    // 2. Periodic Telemetry Status & Heartbeat (every ~3 seconds)
+                    statusSyncCounter++
+                    if (statusSyncCounter >= 2) {
+                        statusSyncCounter = 0
+                        val batteryPct = getBatteryPercentage()
+                        val simPresent = NetworkUtils.isSimPresent(applicationContext)
+                        val simNum = NetworkUtils.getSimPhoneNumber(applicationContext)
 
-                    for ((devId, devTok) in devicesToPoll) {
                         try {
                             currentService.updateDeviceStatus(
                                 deviceId = devId,
@@ -254,10 +280,10 @@ class LocationService : Service() {
                         } catch (e: Exception) {
                             // Transient retry next tick
                         }
-                    }
 
-                    if (!PrivacyManager.isLocationPaused(applicationContext)) {
-                        repository.syncPendingLocations()
+                        if (!PrivacyManager.isLocationPaused(applicationContext)) {
+                            repository.syncPendingLocations()
+                        }
                     }
                 }
 

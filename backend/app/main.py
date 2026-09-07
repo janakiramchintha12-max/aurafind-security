@@ -48,42 +48,19 @@ def seed_default_admin():
             db.add(admin_user)
             db.commit()
 
-        # Ensure Target Device (Realme 13 5G) is pre-registered and linked to janakiram12
-        realme_device_id = "19de15a1-d3fe-4ed2-9bb3-b4b5821bba3c"
-        realme_dev = db.query(Device).filter(Device.id == realme_device_id).first()
-        if not realme_dev:
-            realme_dev = Device(
-                id=realme_device_id,
-                user_id=janaki_user.id,
-                device_name="Realme 13 5G",
-                device_model="Realme RMX5070",
-                android_version="14.0",
-                app_version="1.0.0",
-                device_token="d4d93059-eb8a-4c24-afb7-4ad5770cf798",
-                battery_pct=75.0,
-                status="ONLINE"
-            )
-            db.add(realme_dev)
-            db.commit()
-        else:
-            realme_dev.user_id = janaki_user.id
-            db.commit()
-
-        # PERMANENTLY PURGE "janaki edge 50 fusion" (bdca7649-e699-4d57-a59a-e80a4db9e1de)
-        moto_devs = db.query(Device).filter(
-            (Device.id == "bdca7649-e699-4d57-a59a-e80a4db9e1de") |
-            (Device.device_name.ilike("%edge 50 fusion%")) |
-            (Device.device_model.ilike("%edge 50 fusion%"))
-        ).all()
-        for d in moto_devs:
-            db.delete(d)
-        db.commit()
-
-        # PERMANENTLY PURGE all location history and geofences
+        # COMPLETE FRESH START: PERMANENTLY PURGE ALL DEVICES AND ASSOCIATED DATA
+        from app.models.snapshot import Snapshot
         from app.models.location import Location
+        from app.models.command import Command
         from app.models.geofence import Geofence
+        from app.models.audit import AuditLog
+
+        db.query(Snapshot).delete()
         db.query(Location).delete()
+        db.query(Command).delete()
         db.query(Geofence).delete()
+        db.query(AuditLog).delete()
+        db.query(Device).delete()
         db.commit()
     except Exception as e:
         logging.getLogger("aurafind.auth").warning(f"Development seed skipped: {e}")

@@ -58,13 +58,12 @@ class LostModeOverlayActivity : ComponentActivity() {
     private fun triggerIntruderAlert() {
         CoroutineScope(Dispatchers.IO).launch {
             val prefs = getSharedPreferences("aurafind_prefs", Context.MODE_PRIVATE)
-            val deviceId = prefs.getString("device_id", "19de15a1-d3fe-4ed2-9bb3-b4b5821bba3c")
-            val deviceToken = prefs.getString("device_token", "d4d93059-eb8a-4c24-afb7-4ad5770cf798")
+            val deviceId = prefs.getString("device_id", null)
+            val deviceToken = prefs.getString("device_token", null)
 
             if (deviceId != null && deviceToken != null) {
                 val urls = listOf(
-                    "http://10.216.158.126:8000/",
-                    "https://ahead-allied-theoretical-buttons.trycloudflare.com/"
+                    "https://aurafind-security.onrender.com/"
                 )
 
                 val intruderSelfieBase64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
