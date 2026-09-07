@@ -192,7 +192,7 @@ async def batch_upload_locations(
 @router.get("/{device_id}/locations/history", response_model=List[LocationResponse])
 def get_location_history(
     device_id: str,
-    range: Optional[str] = Query("today"), # 1h, 2h, 3h, 6h, 12h, 24h, 48h, today, yesterday, 7days, 30days, custom
+    range: Optional[str] = Query("all"), # all, 1h, 2h, 3h, 6h, 12h, 24h, 48h, today, yesterday, 7days, 30days, custom
     hours: Optional[int] = None,
     start_date: Optional[datetime] = None,
     end_date: Optional[datetime] = None,

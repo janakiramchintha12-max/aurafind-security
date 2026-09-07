@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap, Tooltip } from 'react-leaflet';
 import L from 'leaflet';
 import { 
-  Clock, 
   Play, 
   Pause, 
   RotateCcw, 
@@ -10,20 +9,14 @@ import {
   RefreshCw, 
   Smartphone, 
   Navigation, 
-  Gauge, 
-  Battery, 
-  Zap, 
-  Compass, 
-  MapPin, 
   ChevronRight, 
   ChevronLeft, 
   Repeat, 
-  Layers, 
-  Calendar, 
   Activity,
   Milestone,
   Eye,
-  Sliders
+  Radio,
+  Clock
 } from 'lucide-react';
 import { devicesApi, locationsApi } from '../services/api';
 import { Device, LocationRecord } from '../types';
@@ -63,7 +56,7 @@ const waypointDotIcon = new L.DivIcon({
   popupAnchor: [0, -6]
 });
 
-const createMovingTargetIcon = (headingDeg: number, speedKmh: number = 0) => {
+const createMovingTargetIcon = (headingDeg: number, _speedKmh: number = 0) => {
   return new L.DivIcon({
     className: 'route-moving-target',
     html: `
@@ -97,7 +90,7 @@ function MapFollowController({
     if (followMode && center && center[0] && center[1]) {
       map.panTo(center, { animate: true, duration: 0.3 });
     }
-  }, [center, followMode, map]);
+  }, [center, followMode, map, zoom]);
   return null;
 }
 
@@ -128,12 +121,6 @@ export const LocationHistoryPage: React.FC = () => {
   const [devices, setDevices] = useState<Device[]>([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState<string>('');
   
-  // Filter Horizon & Previous Hours
-  const [timePreset, setTimePreset] = useState<string>('1h'); // 1h, 2h, 3h, 6h, 12h, 24h, 48h, today, yesterday, 7days, custom
-  const [customHours, setCustomHours] = useState<number>(3);
-  const [startDate, setStartDate] = useState<string>('');
-  const [endDate, setEndDate] = useState<string>('');
-
   const [history, setHistory] = useState<LocationRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [mapTheme, setMapTheme] = useState<'satellite' | 'dark' | 'street'>('satellite');
@@ -146,6 +133,8 @@ export const LocationHistoryPage: React.FC = () => {
   const [isLooping, setIsLooping] = useState(false);
 
   const playTimerRef = useRef<any>(null);
+  const isPlayingRef = useRef(isPlaying);
+  isPlayingRef.current = isPlaying;
 
   // Initial Load Devices
   useEffect(() => {
@@ -163,41 +152,64 @@ export const LocationHistoryPage: React.FC = () => {
     loadDevices();
   }, []);
 
-  // Fetch Location History whenever filters change
-  const fetchHistory = async () => {
+  // Fetch Full Continuous Location History (range='all' permanently locked)
+  const fetchHistory = async (isBackgroundPoll = false) => {
     if (!selectedDeviceId) return;
-    setLoading(true);
-    setIsPlaying(false);
-    setPlaybackIndex(0);
+    if (!isBackgroundPoll) {
+      setLoading(true);
+    }
 
     try {
-      let rangeParam = timePreset;
-      let hoursParam: number | undefined = undefined;
-
-      if (timePreset === 'custom_hours') {
-        rangeParam = `${customHours}h`;
-        hoursParam = customHours;
-      }
-
       const records = await locationsApi.getHistory(
         selectedDeviceId,
-        rangeParam,
-        timePreset === 'custom' ? startDate : undefined,
-        timePreset === 'custom' ? endDate : undefined,
-        hoursParam,
+        'all',
+        undefined,
+        undefined,
+        undefined,
         10000
       );
-      setHistory(records || []);
+
+      const newHistory = records || [];
+      
+      setHistory((prevHistory) => {
+        // If this is the initial load or device change, set index to end
+        if (prevHistory.length === 0 && newHistory.length > 0) {
+          setPlaybackIndex(newHistory.length - 1);
+        } else if (newHistory.length > prevHistory.length) {
+          // If auto-following at the latest position, update scrubber to the new latest fix
+          setPlaybackIndex((prevIdx) => {
+            if (!isPlayingRef.current && prevIdx >= prevHistory.length - 1) {
+              return newHistory.length - 1;
+            }
+            return prevIdx;
+          });
+        }
+        return newHistory;
+      });
     } catch (err) {
-      console.error('Failed to load location history', err);
+      console.error('Failed to load continuous location history', err);
     } finally {
-      setLoading(false);
+      if (!isBackgroundPoll) {
+        setLoading(false);
+      }
     }
   };
 
+  // Initial fetch on device change
   useEffect(() => {
-    fetchHistory();
-  }, [selectedDeviceId, timePreset, customHours]);
+    setIsPlaying(false);
+    setPlaybackIndex(0);
+    fetchHistory(false);
+  }, [selectedDeviceId]);
+
+  // Background 5-second Live Sync Poll
+  useEffect(() => {
+    if (!selectedDeviceId) return;
+    const interval = setInterval(() => {
+      fetchHistory(true);
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [selectedDeviceId]);
 
   // High-Speed Frame-Rate Compensated Playback Loop
   useEffect(() => {
@@ -261,16 +273,18 @@ export const LocationHistoryPage: React.FC = () => {
     return 0;
   }, [currentPoint, prevPoint]);
 
-  // Overall Journey Analytics
+  // Overall Continuous Journey Analytics
   const tripStats = useMemo(() => {
     if (history.length < 2) {
       return {
         totalDistanceKm: 0,
-        durationMinutes: 0,
+        durationSeconds: 0,
+        durationFormatted: '0s',
+        timeSpanText: history.length === 1 ? new Date(history[0].client_timestamp).toLocaleTimeString() : 'No fixes',
         avgSpeedKmh: 0,
         maxSpeedKmh: 0,
         batteryStart: history[0]?.battery_level ?? null,
-        batteryEnd: history[history.length - 1]?.battery_level ?? null,
+        batteryEnd: history[0]?.battery_level ?? null,
       };
     }
 
@@ -304,10 +318,14 @@ export const LocationHistoryPage: React.FC = () => {
       const m = Math.floor(durationSeconds / 60);
       const s = durationSeconds % 60;
       durationFormatted = s > 0 ? `${m}m ${s}s` : `${m} mins`;
-    } else {
+    } else if (durationSeconds < 86400) {
       const h = Math.floor(durationSeconds / 3600);
       const m = Math.floor((durationSeconds % 3600) / 60);
       durationFormatted = m > 0 ? `${h}h ${m}m` : `${h} hrs`;
+    } else {
+      const d = Math.floor(durationSeconds / 86400);
+      const h = Math.floor((durationSeconds % 86400) / 3600);
+      durationFormatted = `${d}d ${h}h`;
     }
 
     const startFormatted = new Date(history[0].client_timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -362,25 +380,11 @@ export const LocationHistoryPage: React.FC = () => {
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `aurafind_route_history_${selectedDeviceId}_${timePreset}.csv`);
+    link.setAttribute('download', `aurafind_continuous_route_history_${selectedDeviceId}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
-
-  // Quick preset options for previous hours
-  const hourPills = [
-    { label: '1 Hour', value: '1h' },
-    { label: '2 Hours', value: '2h' },
-    { label: '3 Hours', value: '3h' },
-    { label: '6 Hours', value: '6h' },
-    { label: '12 Hours', value: '12h' },
-    { label: '24 Hours', value: '24h' },
-    { label: '48 Hours', value: '48h' },
-    { label: 'Today', value: 'today' },
-    { label: 'Yesterday', value: 'yesterday' },
-    { label: '7 Days', value: '7days' },
-  ];
 
   // Speed multiplier list (including 25x and 50x)
   const speedOptions = [1, 2, 5, 10, 25, 50];
@@ -393,10 +397,10 @@ export const LocationHistoryPage: React.FC = () => {
         <div>
           <h1 className="text-2xl font-black text-white tracking-wide flex items-center gap-2.5">
             <Milestone className="w-7 h-7 text-cyan-400" />
-            <span>Route History & High-Speed Playback</span>
+            <span>Continuous Route History & High-Speed Playback</span>
           </h1>
           <p className="text-sm text-slate-400">
-            Replay historical movements on interactive satellite maps with animated breadcrumbs up to 50x speed
+            Full continuous route since device enrollment with animated breadcrumb replay up to 50x speed
           </p>
         </div>
 
@@ -440,7 +444,7 @@ export const LocationHistoryPage: React.FC = () => {
           </button>
 
           <button
-            onClick={fetchHistory}
+            onClick={() => fetchHistory(false)}
             className="flex items-center space-x-1.5 px-3.5 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-cyan-600/20 cursor-pointer"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
@@ -449,15 +453,15 @@ export const LocationHistoryPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Control Panel: Device Selector & Previous Hours Filters */}
+      {/* Control Panel: Device Selector & Continuous Journey Status */}
       <div className="bg-slate-800/90 border border-slate-700/80 rounded-3xl p-5 sm:p-6 shadow-2xl space-y-4">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           
           {/* Device Dropdown */}
-          <div className="flex items-center gap-3 min-w-[260px]">
+          <div className="flex items-center gap-3 min-w-[280px]">
             <span className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
               <Smartphone className="w-4 h-4 text-cyan-400" />
-              <span>Target:</span>
+              <span>Target Device:</span>
             </span>
             <select
               value={selectedDeviceId}
@@ -472,93 +476,14 @@ export const LocationHistoryPage: React.FC = () => {
             </select>
           </div>
 
-          {/* Time Horizon Preset Pills */}
-          <div className="flex-1 flex items-center gap-1.5 overflow-x-auto pb-1 max-w-full">
-            {hourPills.map((pill) => (
-              <button
-                key={pill.value}
-                onClick={() => setTimePreset(pill.value)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap border transition-all cursor-pointer ${
-                  timePreset === pill.value
-                    ? 'bg-cyan-500 text-slate-950 border-cyan-400 shadow-md shadow-cyan-500/20 scale-105'
-                    : 'bg-slate-900/80 hover:bg-slate-700/60 text-slate-300 border-slate-700/60'
-                }`}
-              >
-                {pill.label}
-              </button>
-            ))}
-
-            {/* Custom Hours Button */}
-            <button
-              onClick={() => setTimePreset('custom_hours')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap border transition-all cursor-pointer ${
-                timePreset === 'custom_hours'
-                  ? 'bg-cyan-500 text-slate-950 border-cyan-400 shadow-md scale-105'
-                  : 'bg-slate-900/80 hover:bg-slate-700/60 text-slate-300 border-slate-700/60'
-              }`}
-            >
-              ⚙️ Custom Hours
-            </button>
-
-            {/* Custom Range Button */}
-            <button
-              onClick={() => setTimePreset('custom')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap border transition-all cursor-pointer ${
-                timePreset === 'custom'
-                  ? 'bg-cyan-500 text-slate-950 border-cyan-400 shadow-md scale-105'
-                  : 'bg-slate-900/80 hover:bg-slate-700/60 text-slate-300 border-slate-700/60'
-              }`}
-            >
-              📅 Date Picker
-            </button>
+          {/* Continuous Journey Status Badge */}
+          <div className="flex items-center gap-2 bg-emerald-950/60 border border-emerald-500/40 px-4 py-2 rounded-2xl">
+            <Radio className="w-4 h-4 text-emerald-400 animate-pulse" />
+            <div className="text-xs font-black text-emerald-300 uppercase tracking-wide">
+              Continuous Full History • Uninterrupted Journey Tracking
+            </div>
           </div>
         </div>
-
-        {/* Custom Hours Slider Drawer */}
-        {timePreset === 'custom_hours' && (
-          <div className="pt-3 border-t border-slate-700/60 flex flex-col sm:flex-row items-center gap-4 bg-slate-900/60 p-3 rounded-2xl">
-            <div className="flex items-center gap-2 text-xs font-bold text-cyan-300">
-              <Sliders className="w-4 h-4 text-cyan-400" />
-              <span>Select Past Hours:</span>
-            </div>
-            <input
-              type="range"
-              min="1"
-              max="72"
-              step="1"
-              value={customHours}
-              onChange={(e) => setCustomHours(parseInt(e.target.value))}
-              className="flex-1 accent-cyan-500 cursor-pointer"
-            />
-            <span className="text-sm font-black font-mono text-white bg-slate-800 px-3 py-1 rounded-xl border border-cyan-500/40">
-              Past {customHours} {customHours === 1 ? 'Hour' : 'Hours'}
-            </span>
-          </div>
-        )}
-
-        {/* Custom Date Range Picker Drawer */}
-        {timePreset === 'custom' && (
-          <div className="pt-3 border-t border-slate-700/60 grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-900/60 p-3 rounded-2xl">
-            <div>
-              <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Start Date & Time</label>
-              <input
-                type="datetime-local"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500"
-              />
-            </div>
-            <div>
-              <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">End Date & Time</label>
-              <input
-                type="datetime-local"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-                className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500"
-              />
-            </div>
-          </div>
-        )}
 
         {/* Trip Telemetry Summary Bar */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 pt-3 border-t border-slate-700/60">
@@ -572,7 +497,10 @@ export const LocationHistoryPage: React.FC = () => {
           </div>
 
           <div className="bg-slate-900/70 border border-slate-700/60 rounded-2xl p-3 text-center">
-            <div className="text-[10px] text-emerald-400 font-extrabold uppercase tracking-wider">RECORDED SPAN</div>
+            <div className="text-[10px] text-emerald-400 font-extrabold uppercase tracking-wider flex items-center justify-center gap-1">
+              <Clock className="w-3 h-3 text-emerald-400" />
+              <span>TRIP DURATION</span>
+            </div>
             <div className="text-lg font-black text-white mt-0.5 font-mono">
               {tripStats.durationFormatted || '0s'}
             </div>
@@ -598,7 +526,7 @@ export const LocationHistoryPage: React.FC = () => {
           </div>
 
           <div className="bg-slate-900/70 border border-slate-700/60 rounded-2xl p-3 text-center">
-            <div className="text-[10px] text-purple-400 font-extrabold uppercase tracking-wider">BATTERY USAGE</div>
+            <div className="text-[10px] text-purple-400 font-extrabold uppercase tracking-wider">BATTERY DELTA</div>
             <div className="text-lg font-black text-white mt-0.5 font-mono">
               {tripStats.batteryStart !== null && tripStats.batteryEnd !== null
                 ? `${tripStats.batteryStart}% ➔ ${tripStats.batteryEnd}%`
@@ -607,7 +535,7 @@ export const LocationHistoryPage: React.FC = () => {
           </div>
 
           <div className="bg-slate-900/70 border border-slate-700/60 rounded-2xl p-3 text-center">
-            <div className="text-[10px] text-cyan-300 font-extrabold uppercase tracking-wider">GPS FIXES</div>
+            <div className="text-[10px] text-cyan-300 font-extrabold uppercase tracking-wider">TOTAL GPS FIXES</div>
             <div className="text-lg font-black text-white mt-0.5 font-mono">
               {history.length} fixes
             </div>
@@ -630,7 +558,7 @@ export const LocationHistoryPage: React.FC = () => {
                   }`}
                 >
                   {isPlaying ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current" />}
-                  <span>{isPlaying ? 'Pause' : 'Play Flight Trail'}</span>
+                  <span>{isPlaying ? 'Pause' : 'Play Continuous Route'}</span>
                 </button>
 
                 <button
@@ -892,7 +820,7 @@ export const LocationHistoryPage: React.FC = () => {
           <div className="flex items-center justify-between border-b border-slate-700/80 pb-3">
             <div className="flex items-center gap-2">
               <Activity className="w-4 h-4 text-cyan-400" />
-              <span className="text-xs font-black uppercase text-slate-200 tracking-wider">Historical Waypoints</span>
+              <span className="text-xs font-black uppercase text-slate-200 tracking-wider">Continuous Waypoints</span>
             </div>
             <span className="text-xs font-bold text-cyan-400 bg-cyan-500/10 px-2 py-0.5 rounded-lg border border-cyan-500/30">
               {history.length} points
@@ -902,14 +830,14 @@ export const LocationHistoryPage: React.FC = () => {
           {loading ? (
             <div className="flex-1 flex flex-col items-center justify-center text-slate-400 space-y-2">
               <RefreshCw className="w-7 h-7 animate-spin text-cyan-400" />
-              <span className="text-xs font-bold">Querying flight path telemetry...</span>
+              <span className="text-xs font-bold">Querying full lifetime route...</span>
             </div>
           ) : history.length === 0 ? (
             <div className="flex-1 flex flex-col items-center justify-center text-center p-6 text-slate-400 space-y-3">
-              <MapPin className="w-10 h-10 text-slate-600 mx-auto" />
+              <Radio className="w-10 h-10 text-slate-600 mx-auto" />
               <div className="font-bold text-slate-300 text-sm">No Movement Recorded</div>
               <p className="text-xs text-slate-500 max-w-xs">
-                No location fixes found for the selected time horizon. Try selecting a broader time horizon above (e.g. 24 Hours or 7 Days).
+                AuraFind has not yet recorded location fixes for this device. Once the device sends GPS fixes, the continuous trail will appear here automatically.
               </p>
             </div>
           ) : (
