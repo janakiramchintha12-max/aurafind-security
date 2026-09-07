@@ -86,8 +86,9 @@ export const locationsApi = {
     const res = await api.get(`/devices/${deviceId}/locations/latest`);
     return res.data;
   },
-  getHistory: async (deviceId: string, range: string = 'today', startDate?: string, endDate?: string): Promise<LocationRecord[]> => {
-    const params: any = { range };
+  getHistory: async (deviceId: string, range: string = 'today', startDate?: string, endDate?: string, hours?: number, limit: number = 5000): Promise<LocationRecord[]> => {
+    const params: any = { range, limit };
+    if (hours) params.hours = hours;
     if (startDate) params.start_date = startDate;
     if (endDate) params.end_date = endDate;
     const res = await api.get(`/devices/${deviceId}/locations/history`, { params });

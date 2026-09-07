@@ -189,12 +189,14 @@ async def batch_upload_locations(
     )
 
 @router.get("/{device_id}/locations", response_model=List[LocationResponse])
+@router.get("/{device_id}/locations/history", response_model=List[LocationResponse])
 def get_location_history(
     device_id: str,
-    range: Optional[str] = Query("today"), # today, yesterday, 7days, 30days, custom
+    range: Optional[str] = Query("today"), # 1h, 2h, 3h, 6h, 12h, 24h, 48h, today, yesterday, 7days, 30days, custom
+    hours: Optional[int] = None,
     start_date: Optional[datetime] = None,
     end_date: Optional[datetime] = None,
-    limit: int = Query(500, ge=1, le=5000),
+    limit: int = Query(5000, ge=1, le=10000),
     device: Device = Depends(verify_device_ownership),
     db: Session = Depends(get_db)
 ):
@@ -204,7 +206,16 @@ def get_location_history(
     now = datetime.now(timezone.utc)
     query = db.query(Location).filter(Location.device_id == device_id)
 
-    if range == "today":
+    # 1. Direct hours parameter
+    if hours is not None and hours > 0:
+        start = now - timedelta(hours=hours)
+        query = query.filter(Location.client_timestamp >= start)
+    # 2. Dynamic string range parsing (e.g. 1h, 3h, 6h, 12h, 24h, 48h, 72h)
+    elif range and range.endswith("h") and range[:-1].isdigit():
+        h = int(range[:-1])
+        start = now - timedelta(hours=h)
+        query = query.filter(Location.client_timestamp >= start)
+    elif range == "today":
         start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         query = query.filter(Location.client_timestamp >= start)
     elif range == "yesterday":
@@ -219,6 +230,8 @@ def get_location_history(
         query = query.filter(Location.client_timestamp >= start)
     elif range == "custom" and start_date and end_date:
         query = query.filter(and_(Location.client_timestamp >= start_date, Location.client_timestamp <= end_date))
+    elif range == "all":
+        pass  # return all available
 
     locations = query.order_by(Location.client_timestamp.asc()).limit(limit).all()
     return locations

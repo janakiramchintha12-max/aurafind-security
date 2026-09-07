@@ -5,6 +5,7 @@ import { Login } from './pages/Login';
 import { DashboardPage } from './pages/Dashboard';
 import { DeviceDetailsPage } from './pages/DeviceDetails';
 import { LiveLocationPage } from './pages/LiveLocation';
+import { LocationHistoryPage } from './pages/LocationHistory';
 import { LiveAudioPage } from './pages/LiveAudio';
 import { CommandsPage } from './pages/Commands';
 import { AuditLogsPage } from './pages/AuditLogs';
@@ -51,8 +52,8 @@ export const App: React.FC = () => {
             <Route path="/" element={user ? <DashboardPage /> : <Navigate to="/login" replace />} />
             <Route path="/devices/:id" element={user ? <DeviceDetailsPage /> : <Navigate to="/login" replace />} />
             <Route path="/live" element={user ? <LiveLocationPage /> : <Navigate to="/login" replace />} />
+            <Route path="/history" element={user ? <LocationHistoryPage /> : <Navigate to="/login" replace />} />
             <Route path="/audio" element={user ? <LiveAudioPage /> : <Navigate to="/login" replace />} />
-            <Route path="/history" element={<Navigate to="/live" replace />} />
             <Route path="/geofences" element={<Navigate to="/live" replace />} />
             <Route path="/commands" element={user ? <CommandsPage /> : <Navigate to="/login" replace />} />
             <Route path="/audit" element={user ? <AuditLogsPage /> : <Navigate to="/login" replace />} />
