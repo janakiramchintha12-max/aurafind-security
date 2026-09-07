@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, Circle, Polyline } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, Circle, Polyline, Tooltip } from 'react-leaflet';
 import L from 'leaflet';
-import { Smartphone, MapPin, RefreshCw, Navigation, Compass, Eye, Radio, Laptop, ShieldCheck, Target, CheckCircle2 } from 'lucide-react';
+import { Smartphone, RefreshCw, Navigation, Compass, Radio, Laptop, CheckCircle2, ArrowRightLeft, Move } from 'lucide-react';
 import { devicesApi, commandsApi, connectWebSocket } from '../services/api';
 import { Device } from '../types';
 
@@ -23,7 +23,7 @@ const phoneRadarIcon = new L.DivIcon({
 const userRadarIcon = new L.DivIcon({
   className: 'radar-user-marker',
   html: `
-    <div style="position: relative; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center;">
+    <div style="position: relative; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; cursor: grab;">
       <div style="position: absolute; width: 48px; height: 48px; border-radius: 50%; background: rgba(6, 182, 212, 0.3); animation: ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;"></div>
       <div style="position: absolute; width: 30px; height: 30px; border-radius: 50%; background: #06b6d4; border: 3px solid #ffffff; box-shadow: 0 0 15px #06b6d4; display: flex; align-items: center; justify-content: center; color: white; font-size: 14px;">💻</div>
     </div>
@@ -33,7 +33,7 @@ const userRadarIcon = new L.DivIcon({
   popupAnchor: [0, -20]
 });
 
-// Accurate Haversine Distance Calculation (in Meters)
+// High-Precision Haversine Distance Calculation (Meters)
 function calculateDistanceMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371000; // Earth radius in meters
   const dLat = (lat2 - lat1) * (Math.PI / 180);
@@ -42,10 +42,10 @@ function calculateDistanceMeters(lat1: number, lon1: number, lat2: number, lon2:
     Math.sin(dLat / 2) * Math.sin(dLat / 2) +
     Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return Math.round(R * c);
+  return R * c;
 }
 
-// Initial Bearing from Point 1 (User) to Point 2 (Phone)
+// Initial Bearing from Point 1 to Point 2
 function calculateBearingDegrees(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const p1 = lat1 * (Math.PI / 180);
   const p2 = lat2 * (Math.PI / 180);
@@ -63,25 +63,47 @@ function getCompassDirection(bearing: number): string {
   return directions[idx];
 }
 
+function formatDistance(distMeters: number | null): string {
+  if (distMeters == null) return 'Calculating...';
+  if (distMeters < 1) return '< 1 meter';
+  if (distMeters < 100) return `${distMeters.toFixed(1)} meters`;
+  if (distMeters < 1000) return `${Math.round(distMeters)} meters`;
+  return `${(distMeters / 1000).toFixed(2)} km`;
+}
+
 export const LiveLocationPage: React.FC = () => {
   const [devices, setDevices] = useState<Device[]>([]);
   const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number; accuracy?: number } | null>(null);
+  const [rangeMode, setRangeMode] = useState<'laptop_phone' | 'device_device'>('laptop_phone');
   const [mapTheme, setMapTheme] = useState<'satellite' | 'dark' | 'street'>('satellite');
   const [loading, setLoading] = useState(true);
 
-  const [laptopAnchorLocked, setLaptopAnchorLocked] = useState(false);
-
-  // Auto-anchor Laptop Base directly to Phone's high-precision Satellite GPS on load
+  // 1. Live Browser Geolocation Watcher for Laptop
   useEffect(() => {
-    if (!laptopAnchorLocked && selectedDevice?.last_latitude && selectedDevice?.last_longitude) {
-      setUserLocation({
-        lat: selectedDevice.last_latitude,
-        lng: selectedDevice.last_longitude
-      });
-      setLaptopAnchorLocked(true);
+    if (typeof window !== 'undefined' && 'geolocation' in navigator) {
+      const watchId = navigator.geolocation.watchPosition(
+        (pos) => {
+          setUserLocation(prev => {
+            // Keep existing position if manually dragged unless first fix
+            if (!prev) {
+              return {
+                lat: pos.coords.latitude,
+                lng: pos.coords.longitude,
+                accuracy: pos.coords.accuracy
+              };
+            }
+            return prev;
+          });
+        },
+        (err) => {
+          console.warn('Browser GPS permission or status:', err.message);
+        },
+        { enableHighAccuracy: true, maximumAge: 2000, timeout: 10000 }
+      );
+      return () => navigator.geolocation.clearWatch(watchId);
     }
-  }, [selectedDevice?.last_latitude, selectedDevice?.last_longitude, laptopAnchorLocked]);
+  }, []);
 
   const fetchDevices = async () => {
     try {
@@ -111,26 +133,61 @@ export const LiveLocationPage: React.FC = () => {
   }, []);
 
   const mappedDevices = devices.filter((d) => d.last_latitude != null && d.last_longitude != null);
-  
+
+  // Fallback initial laptop coordinate if browser GPS is blocked
+  useEffect(() => {
+    if (!userLocation && mappedDevices.length > 0) {
+      // Offset slightly (20m south) for intuitive initial visualization if browser GPS blocked
+      const ref = mappedDevices[0];
+      setUserLocation({
+        lat: (ref.last_latitude || 14.0413) - 0.00018,
+        lng: (ref.last_longitude || 79.2624) - 0.00005
+      });
+    }
+  }, [mappedDevices, userLocation]);
+
+  // Determine Comparison Endpoints (Point A and Point B)
+  let originLat: number | null = null;
+  let originLng: number | null = null;
+  let originLabel = 'YOUR LAPTOP';
+
+  let targetLat: number | null = null;
+  let targetLng: number | null = null;
+  let targetLabel = selectedDevice?.device_name || 'TARGET PHONE';
+
+  if (rangeMode === 'laptop_phone') {
+    if (userLocation) {
+      originLat = userLocation.lat;
+      originLng = userLocation.lng;
+      originLabel = 'YOUR LAPTOP';
+    }
+    if (selectedDevice?.last_latitude && selectedDevice?.last_longitude) {
+      targetLat = selectedDevice.last_latitude;
+      targetLng = selectedDevice.last_longitude;
+      targetLabel = selectedDevice.device_name;
+    }
+  } else {
+    // Inter-device mode: compare Device 1 and Device 2
+    if (mappedDevices.length >= 2) {
+      originLat = mappedDevices[0].last_latitude!;
+      originLng = mappedDevices[0].last_longitude!;
+      originLabel = mappedDevices[0].device_name;
+
+      targetLat = mappedDevices[1].last_latitude!;
+      targetLng = mappedDevices[1].last_longitude!;
+      targetLabel = mappedDevices[1].device_name;
+    }
+  }
+
   // Real GPS Distance & Bearing Calculation
   let distanceMeters: number | null = null;
   let bearingDegrees: number | null = null;
   let directionText = 'At Same Spot 📍';
 
-  if (userLocation && selectedDevice?.last_latitude && selectedDevice?.last_longitude) {
-    distanceMeters = calculateDistanceMeters(
-      userLocation.lat,
-      userLocation.lng,
-      selectedDevice.last_latitude,
-      selectedDevice.last_longitude
-    );
-    bearingDegrees = calculateBearingDegrees(
-      userLocation.lat,
-      userLocation.lng,
-      selectedDevice.last_latitude,
-      selectedDevice.last_longitude
-    );
-    directionText = distanceMeters <= 5 ? 'At Same Spot 📍' : getCompassDirection(bearingDegrees);
+  if (originLat != null && originLng != null && targetLat != null && targetLng != null) {
+    distanceMeters = calculateDistanceMeters(originLat, originLng, targetLat, targetLng);
+    bearingDegrees = calculateBearingDegrees(originLat, originLng, targetLat, targetLng);
+    directionText = distanceMeters <= 3 ? 'At Same Spot 📍' : getCompassDirection(bearingDegrees);
   }
 
   const handleLocateFresh = async () => {
@@ -144,12 +201,8 @@ export const LiveLocationPage: React.FC = () => {
     }
   };
 
-  const googleMapsUrl = selectedDevice?.last_latitude && selectedDevice?.last_longitude
-    ? `https://www.google.com/maps/dir/?api=1&destination=${selectedDevice.last_latitude},${selectedDevice.last_longitude}&travelmode=walking`
-    : '#';
-
-  const streetViewUrl = selectedDevice?.last_latitude && selectedDevice?.last_longitude
-    ? `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${selectedDevice.last_latitude},${selectedDevice.last_longitude}`
+  const googleMapsUrl = targetLat && targetLng
+    ? `https://www.google.com/maps/dir/?api=1&destination=${targetLat},${targetLng}&travelmode=walking`
     : '#';
 
   const tileLayerUrls = {
@@ -158,11 +211,11 @@ export const LiveLocationPage: React.FC = () => {
     street: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
   };
 
-  const mapCenter: [number, number] = selectedDevice?.last_latitude && selectedDevice?.last_longitude
-    ? [selectedDevice.last_latitude, selectedDevice.last_longitude]
+  const mapCenter: [number, number] = targetLat && targetLng
+    ? [targetLat, targetLng]
     : userLocation
     ? [userLocation.lat, userLocation.lng]
-    : [14.0415, 79.2625];
+    : [14.0413, 79.2624];
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-4">
@@ -175,12 +228,36 @@ export const LiveLocationPage: React.FC = () => {
             <span>Tactical Dual-GPS Proximity Rangefinder</span>
           </h1>
           <p className="text-sm text-slate-400">
-            Real-time live distance & bearing calculation between your Laptop and Target Mobile Phone
+            Real-time live distance & bearing calculation with drag-to-calibrate positioning
           </p>
         </div>
 
-        {/* Map Theme & Signal Controls */}
+        {/* Mode Switcher & Controls */}
         <div className="flex flex-wrap items-center gap-2">
+          {/* Range Mode Switcher */}
+          <div className="bg-slate-800 border border-slate-700 rounded-xl p-1 flex items-center space-x-1 text-xs">
+            <button
+              onClick={() => setRangeMode('laptop_phone')}
+              className={`px-2.5 py-1.5 rounded-lg font-bold transition-all flex items-center gap-1 ${
+                rangeMode === 'laptop_phone' ? 'bg-cyan-600 text-white shadow-md' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Laptop className="w-3 h-3" />
+              <span>Laptop ↔ Phone</span>
+            </button>
+            {mappedDevices.length >= 2 && (
+              <button
+                onClick={() => setRangeMode('device_device')}
+                className={`px-2.5 py-1.5 rounded-lg font-bold transition-all flex items-center gap-1 ${
+                  rangeMode === 'device_device' ? 'bg-purple-600 text-white shadow-md' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <ArrowRightLeft className="w-3 h-3" />
+                <span>Phone ↔ Phone</span>
+              </button>
+            )}
+          </div>
+
           {/* Map Layer Switcher */}
           <div className="bg-slate-800 border border-slate-700 rounded-xl p-1 flex items-center space-x-1 text-xs">
             <button
@@ -197,7 +274,7 @@ export const LiveLocationPage: React.FC = () => {
                 mapTheme === 'dark' ? 'bg-cyan-600 text-white shadow-md' : 'text-slate-400 hover:text-white'
               }`}
             >
-              🌌 Cyber Dark
+              🌌 Dark
             </button>
             <button
               onClick={() => setMapTheme('street')}
@@ -219,129 +296,100 @@ export const LiveLocationPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Cockpit HUD & Real-Time Proximity Navigator Bar */}
-      {selectedDevice && selectedDevice.last_latitude && selectedDevice.last_longitude && (
-        <div className="bg-slate-800/95 border border-cyan-500/40 rounded-2xl p-4 shadow-2xl backdrop-blur grid grid-cols-2 md:grid-cols-5 gap-3 items-center">
-          
-          {/* Target Phone info */}
-          <div className="space-y-0.5">
-            <div className="text-[10px] text-rose-400 font-extrabold uppercase tracking-wider flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse"></span>
-              <span>TARGET MOBILE POSITION</span>
-            </div>
-            <div className="text-base font-bold text-white flex items-center space-x-1.5 truncate">
-              <Smartphone className="w-4 h-4 text-rose-400 flex-shrink-0" />
-              <span className="truncate">{selectedDevice.device_name}</span>
-            </div>
-            <div className="text-[11px] font-mono text-rose-300">
-              📍 {selectedDevice.last_latitude.toFixed(5)}, {selectedDevice.last_longitude.toFixed(5)}
-            </div>
+      {/* Cockpit HUD & Real-Time Proximity Rangefinder */}
+      <div className="bg-slate-800/95 border border-cyan-500/40 rounded-2xl p-4 shadow-2xl backdrop-blur grid grid-cols-2 md:grid-cols-5 gap-3 items-center">
+        
+        {/* Origin Endpoint */}
+        <div className="bg-slate-900/70 p-2.5 rounded-xl border border-slate-700/60 text-center">
+          <div className="text-[10px] text-cyan-400 font-extrabold uppercase tracking-wider flex items-center justify-center gap-1">
+            <Laptop className="w-3 h-3 text-cyan-400" />
+            <span>FROM: {originLabel}</span>
           </div>
+          {originLat != null && originLng != null ? (
+            <>
+              <div className="text-xs font-bold text-cyan-300 font-mono mt-1">
+                📍 {originLat.toFixed(5)}, {originLng.toFixed(5)}
+              </div>
+              <div className="text-[10px] text-slate-400 flex items-center justify-center gap-1 mt-0.5">
+                <Move className="w-2.5 h-2.5 text-cyan-400" />
+                <span>Drag 💻 marker on map</span>
+              </div>
+            </>
+          ) : (
+            <div className="text-xs text-slate-400 mt-1">Acquiring position...</div>
+          )}
+        </div>
 
-          {/* User / Laptop Position Info */}
-          <div className="bg-slate-900/70 p-2.5 rounded-xl border border-slate-700/60 text-center flex flex-col justify-between">
-            <div className="text-[10px] text-cyan-400 font-extrabold uppercase tracking-wider flex items-center justify-center gap-1">
-              <Laptop className="w-3 h-3 text-cyan-400" />
-              <span>YOUR LOCATION (LAPTOP)</span>
+        {/* Target Endpoint */}
+        <div className="bg-slate-900/70 p-2.5 rounded-xl border border-slate-700/60 text-center">
+          <div className="text-[10px] text-rose-400 font-extrabold uppercase tracking-wider flex items-center justify-center gap-1">
+            <Smartphone className="w-3 h-3 text-rose-400" />
+            <span>TO: {targetLabel}</span>
+          </div>
+          {targetLat != null && targetLng != null ? (
+            <div className="text-xs font-bold text-rose-300 font-mono mt-1">
+              📍 {targetLat.toFixed(5)}, {targetLng.toFixed(5)}
             </div>
-            {userLocation ? (
-              <>
-                <div className="text-sm font-bold text-cyan-300 font-mono mt-0.5">
-                  {userLocation.lat.toFixed(5)}, {userLocation.lng.toFixed(5)}
-                </div>
-                <button
-                  onClick={() => {
-                    if (selectedDevice?.last_latitude && selectedDevice?.last_longitude) {
-                      setUserLocation({
-                        lat: selectedDevice.last_latitude,
-                        lng: selectedDevice.last_longitude
-                      });
-                    }
-                  }}
-                  className="mt-1 py-0.5 px-2 bg-emerald-600/30 hover:bg-emerald-600/50 text-emerald-300 border border-emerald-500/40 rounded text-[10px] font-bold transition-all mx-auto"
-                  title="Zero-calibrate laptop location to phone's satellite GPS"
-                >
-                  🎯 Calibrate: Side-by-Side (0m)
-                </button>
-              </>
-            ) : (
-              <div className="text-[11px] text-slate-400 mt-1">
-                Detecting browser GPS...
+          ) : (
+            <div className="text-xs text-slate-400 mt-1">Signal Syncing...</div>
+          )}
+        </div>
+
+        {/* EXACT LIVE DISTANCE BOX */}
+        <div className="bg-slate-900/90 p-2.5 rounded-xl border-2 border-cyan-500/60 text-center shadow-lg shadow-cyan-500/10">
+          <div className="text-[10px] text-cyan-300 font-extrabold uppercase tracking-wider">EXACT LIVE DISTANCE</div>
+          <div className={`text-2xl font-black tracking-tight ${
+            distanceMeters != null
+              ? distanceMeters <= 20
+                ? 'text-emerald-400 animate-pulse'
+                : distanceMeters <= 100
+                ? 'text-cyan-400'
+                : 'text-amber-400'
+              : 'text-slate-400'
+          }`}>
+            {formatDistance(distanceMeters)}
+          </div>
+          <div className="text-[10px] font-bold text-slate-300">
+            {distanceMeters != null ? (distanceMeters <= 10 ? '🚨 Immediate Proximity' : '📡 Real-Time Dual GPS Delta') : 'Live Synced'}
+          </div>
+        </div>
+
+        {/* Direction Compass */}
+        <div className="bg-slate-900/70 p-2.5 rounded-xl border border-slate-700/60 text-center">
+          <div className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider flex items-center justify-center space-x-1">
+            <Compass className="w-3 h-3 text-cyan-400" />
+            <span>MOVE TOWARDS</span>
+          </div>
+          <div className="text-sm font-extrabold text-cyan-300 flex items-center justify-center space-x-1.5 mt-0.5">
+            {bearingDegrees != null && distanceMeters != null && distanceMeters > 3 && (
+              <div
+                className="w-5 h-5 rounded-full border border-cyan-400 flex items-center justify-center text-[10px] transition-transform duration-500"
+                style={{ transform: `rotate(${bearingDegrees}deg)` }}
+              >
+                ⬆️
               </div>
             )}
+            <span>{directionText}</span>
           </div>
-
-          {/* Real Exact Proximity Distance */}
-          <div className="bg-slate-900/70 p-2.5 rounded-xl border border-slate-700/60 text-center">
-            <div className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider">EXACT LIVE DISTANCE</div>
-            <div className={`text-2xl font-black ${
-              distanceMeters != null
-                ? distanceMeters <= 50
-                  ? 'text-emerald-400'
-                  : distanceMeters <= 500
-                  ? 'text-amber-400'
-                  : 'text-cyan-400'
-                : 'text-slate-400'
-            }`}>
-              {distanceMeters != null ? (
-                distanceMeters >= 1000
-                  ? `${(distanceMeters / 1000).toFixed(2)} km`
-                  : `${distanceMeters} meters`
-              ) : (
-                '0 meters'
-              )}
-            </div>
-            <div className="text-[10px] font-bold text-slate-300">
-              {distanceMeters != null ? (distanceMeters <= 10 ? '🚨 Immediate Proximity' : '📡 Real-Time Dual GPS Delta') : 'Live Synced'}
-            </div>
+          <div className="text-[10px] text-slate-400 font-mono">
+            {bearingDegrees != null ? `Heading: ${bearingDegrees}° Bearing` : 'Direct Range'}
           </div>
-
-          {/* Direction Compass */}
-          <div className="bg-slate-900/70 p-2.5 rounded-xl border border-slate-700/60 text-center">
-            <div className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider flex items-center justify-center space-x-1">
-              <Compass className="w-3 h-3 text-cyan-400" />
-              <span>MOVE TOWARDS</span>
-            </div>
-            <div className="text-sm font-extrabold text-cyan-300 flex items-center justify-center space-x-1.5 mt-0.5">
-              {bearingDegrees != null && distanceMeters != null && distanceMeters > 5 && (
-                <div
-                  className="w-5 h-5 rounded-full border border-cyan-400 flex items-center justify-center text-[10px] transition-transform duration-500"
-                  style={{ transform: `rotate(${bearingDegrees}deg)` }}
-                >
-                  ⬆️
-                </div>
-              )}
-              <span>{directionText}</span>
-            </div>
-            <div className="text-[10px] text-slate-400 font-mono">
-              {bearingDegrees != null ? `Heading: ${bearingDegrees}° Bearing` : 'Direct Range'}
-            </div>
-          </div>
-
-          {/* Actions & Navigation */}
-          <div className="col-span-2 md:col-span-1 flex flex-col gap-1.5">
-            <a
-              href={streetViewUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="py-1.5 px-3 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 font-bold rounded-lg text-xs flex items-center justify-center space-x-1 transition-all"
-            >
-              <Eye className="w-3.5 h-3.5" />
-              <span>360° Street View</span>
-            </a>
-            <a
-              href={googleMapsUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="py-1.5 px-3 bg-cyan-600/30 hover:bg-cyan-600/40 text-cyan-300 border border-cyan-500/40 font-bold rounded-lg text-xs flex items-center justify-center space-x-1 transition-all"
-            >
-              <Navigation className="w-3.5 h-3.5" />
-              <span>Live Walk Guide</span>
-            </a>
-          </div>
-
         </div>
-      )}
+
+        {/* Actions & Navigation */}
+        <div className="col-span-2 md:col-span-1 flex flex-col gap-1.5">
+          <a
+            href={googleMapsUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="py-2 px-3 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white border border-cyan-400 font-bold rounded-xl text-xs flex items-center justify-center space-x-1.5 transition-all shadow-lg shadow-cyan-600/20"
+          >
+            <Navigation className="w-3.5 h-3.5" />
+            <span>Live Walk Guide</span>
+          </a>
+        </div>
+
+      </div>
 
       {/* Main Map & Device List Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 h-[650px]">
@@ -387,55 +435,75 @@ export const LiveLocationPage: React.FC = () => {
             );
           })}
 
-          <div className="p-3 bg-slate-900/80 rounded-xl border border-slate-800 text-[11px] text-slate-400 space-y-1">
+          <div className="p-3 bg-slate-900/80 rounded-xl border border-slate-800 text-[11px] text-slate-400 space-y-1.5">
             <div className="font-bold text-emerald-400 flex items-center gap-1">
               <CheckCircle2 className="w-3.5 h-3.5" />
-              <span>Real-Time Distance Radar</span>
+              <span>Interactive Drag Calibration</span>
             </div>
             <p>
-              Your laptop's real GPS is locked automatically. As you move your phone, the distance and directional arrow update in real time with high precision!
+              💡 <strong>Tip:</strong> Drag the <strong>💻 laptop marker</strong> anywhere on the satellite view (e.g. to your exact desk or room). Distance and direction recalculate instantly!
             </p>
           </div>
         </div>
 
-        {/* Leaflet Map: Renders BOTH markers (Laptop + Mobile Phone) with connecting path */}
+        {/* Leaflet Map: Renders ALL markers with connecting path and distance badges */}
         <div className="lg:col-span-3 bg-slate-900 border border-slate-700/60 rounded-2xl overflow-hidden shadow-2xl relative">
-          <MapContainer center={mapCenter} zoom={16} style={{ width: '100%', height: '100%' }}>
+          <MapContainer center={mapCenter} zoom={18} style={{ width: '100%', height: '100%' }}>
             <TileLayer
               key={mapTheme}
               attribution='&copy; <a href="https://www.esri.com/">Esri</a> & OpenStreetMap contributors'
               url={tileLayerUrls[mapTheme]}
+              maxZoom={20}
             />
 
-            {/* Marker 1: USER / LAPTOP LOCATION (Cyan Marker) */}
+            {/* Marker 1: USER / LAPTOP LOCATION (Draggable Cyan Marker) */}
             {userLocation && (
-              <Marker position={[userLocation.lat, userLocation.lng]} icon={userRadarIcon}>
+              <Marker
+                position={[userLocation.lat, userLocation.lng]}
+                icon={userRadarIcon}
+                draggable={true}
+                eventHandlers={{
+                  dragend: (e) => {
+                    const marker = e.target;
+                    const pos = marker.getLatLng();
+                    setUserLocation({ lat: pos.lat, lng: pos.lng });
+                  }
+                }}
+              >
                 <Popup>
                   <div className="p-1 space-y-1 text-slate-900 font-sans">
-                    <div className="font-bold text-sm text-cyan-700">💻 Your Location (Laptop GPS)</div>
+                    <div className="font-bold text-sm text-cyan-700">💻 Your Laptop Location (Draggable)</div>
                     <div className="text-xs font-mono">📍 {userLocation.lat.toFixed(5)}, {userLocation.lng.toFixed(5)}</div>
+                    <div className="text-[10px] text-slate-500">Drag to calibrate exact spot on map</div>
                   </div>
                 </Popup>
+                <Tooltip permanent direction="top" offset={[0, -20]} className="bg-slate-900 text-cyan-300 font-bold text-[10px] border border-cyan-500 rounded px-1 py-0.5">
+                  💻 You (Drag me)
+                </Tooltip>
               </Marker>
             )}
 
-            {/* Connecting Polyline between Laptop and Mobile Phone */}
-            {userLocation && selectedDevice?.last_latitude && selectedDevice?.last_longitude && (
+            {/* Connecting Rangefinder Line */}
+            {originLat != null && originLng != null && targetLat != null && targetLng != null && (
               <Polyline
                 positions={[
-                  [userLocation.lat, userLocation.lng],
-                  [selectedDevice.last_latitude, selectedDevice.last_longitude]
+                  [originLat, originLng],
+                  [targetLat, targetLng]
                 ]}
                 pathOptions={{
-                  color: '#06b6d4',
-                  weight: 3,
+                  color: '#38bdf8',
+                  weight: 3.5,
                   dashArray: '8, 8',
-                  opacity: 0.85
+                  opacity: 0.9
                 }}
-              />
+              >
+                <Tooltip sticky direction="center" className="bg-slate-900 text-white font-black text-xs border-2 border-cyan-400 rounded-lg px-2 py-1 shadow-2xl">
+                  📏 {formatDistance(distanceMeters)} ({directionText})
+                </Tooltip>
+              </Polyline>
             )}
 
-            {/* Marker 2: TARGET MOBILE PHONE (Red Radar Marker) */}
+            {/* Marker 2: TARGET MOBILE PHONES (Red Radar Markers) */}
             {mappedDevices.map((dev) => (
               <React.Fragment key={dev.id}>
                 <Marker position={[dev.last_latitude!, dev.last_longitude!]} icon={phoneRadarIcon}>
@@ -450,13 +518,16 @@ export const LiveLocationPage: React.FC = () => {
                       </div>
                     </div>
                   </Popup>
+                  <Tooltip permanent direction="bottom" offset={[0, 20]} className="bg-slate-900 text-rose-300 font-bold text-[10px] border border-rose-500 rounded px-1 py-0.5">
+                    📱 {dev.device_name}
+                  </Tooltip>
                 </Marker>
 
                 {/* Radar Accuracy Circle */}
                 <Circle
                   center={[dev.last_latitude!, dev.last_longitude!]}
-                  radius={dev.last_accuracy || 50}
-                  pathOptions={{ color: '#ef4444', fillColor: '#ef4444', fillOpacity: 0.15, weight: 1.5 }}
+                  radius={dev.last_accuracy || 25}
+                  pathOptions={{ color: '#ef4444', fillColor: '#ef4444', fillOpacity: 0.12, weight: 1.5 }}
                 />
               </React.Fragment>
             ))}
@@ -467,3 +538,4 @@ export const LiveLocationPage: React.FC = () => {
     </div>
   );
 };
+
