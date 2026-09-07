@@ -48,28 +48,7 @@ def seed_default_admin():
             db.add(admin_user)
             db.commit()
 
-        # Ensure Janaki's phone is pre-registered and linked to janakiram12
-        target_device_id = "bdca7649-e699-4d57-a59a-e80a4db9e1de"
-        device = db.query(Device).filter(Device.id == target_device_id).first()
-        if not device:
-            device = Device(
-                id=target_device_id,
-                user_id=janaki_user.id,
-                device_name="janaki edge 50 fusion",
-                device_model="moto edge 50 fusion",
-                android_version="14.0",
-                app_version="1.0.0",
-                device_token="ca65a717-1185-417b-b8fc-32289812d8eb",
-                battery_pct=85.0,
-                status="ONLINE"
-            )
-            db.add(device)
-            db.commit()
-        else:
-            device.user_id = janaki_user.id
-            db.commit()
-
-        # Ensure Device #2 (Realme 13 5G) is pre-registered and linked to janakiram12
+        # Ensure Target Device (Realme 13 5G) is pre-registered and linked to janakiram12
         realme_device_id = "19de15a1-d3fe-4ed2-9bb3-b4b5821bba3c"
         realme_dev = db.query(Device).filter(Device.id == realme_device_id).first()
         if not realme_dev:
@@ -89,6 +68,16 @@ def seed_default_admin():
         else:
             realme_dev.user_id = janaki_user.id
             db.commit()
+
+        # PERMANENTLY PURGE "janaki edge 50 fusion" (bdca7649-e699-4d57-a59a-e80a4db9e1de)
+        moto_devs = db.query(Device).filter(
+            (Device.id == "bdca7649-e699-4d57-a59a-e80a4db9e1de") |
+            (Device.device_name.ilike("%edge 50 fusion%")) |
+            (Device.device_model.ilike("%edge 50 fusion%"))
+        ).all()
+        for d in moto_devs:
+            db.delete(d)
+        db.commit()
     except Exception as e:
         logging.getLogger("aurafind.auth").warning(f"Development seed skipped: {e}")
     finally:

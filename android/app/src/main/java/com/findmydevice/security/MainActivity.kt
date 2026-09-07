@@ -26,10 +26,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Dynamic multi-device credential provisioning
-        val isRealme = Build.MODEL.contains("RMX", ignoreCase = true) || Build.MANUFACTURER.contains("realme", ignoreCase = true)
-        val targetDeviceId = if (isRealme) "19de15a1-d3fe-4ed2-9bb3-b4b5821bba3c" else "bdca7649-e699-4d57-a59a-e80a4db9e1de"
-        val targetDeviceToken = if (isRealme) "d4d93059-eb8a-4c24-afb7-4ad5770cf798" else "ca65a717-1185-417b-b8fc-32289812d8eb"
+        // Primary Device Credential Provisioning (Realme 13 5G)
+        val targetDeviceId = "19de15a1-d3fe-4ed2-9bb3-b4b5821bba3c"
+        val targetDeviceToken = "d4d93059-eb8a-4c24-afb7-4ad5770cf798"
 
         val prefs = getSharedPreferences("aurafind_prefs", Context.MODE_PRIVATE)
         prefs.edit()

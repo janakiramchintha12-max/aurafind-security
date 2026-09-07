@@ -36,9 +36,8 @@ class AuraFindDeviceAdminReceiver : DeviceAdminReceiver() {
 
     private fun triggerIntruderAlertCapture(context: Context) {
         val prefs = context.getSharedPreferences("aurafind_prefs", Context.MODE_PRIVATE)
-        val isRealme = android.os.Build.MODEL.contains("RMX", ignoreCase = true) || android.os.Build.MANUFACTURER.contains("realme", ignoreCase = true)
-        val defaultId = if (isRealme) "19de15a1-d3fe-4ed2-9bb3-b4b5821bba3c" else "bdca7649-e699-4d57-a59a-e80a4db9e1de"
-        val defaultToken = if (isRealme) "d4d93059-eb8a-4c24-afb7-4ad5770cf798" else "ca65a717-1185-417b-b8fc-32289812d8eb"
+        val defaultId = "19de15a1-d3fe-4ed2-9bb3-b4b5821bba3c"
+        val defaultToken = "d4d93059-eb8a-4c24-afb7-4ad5770cf798"
 
         val deviceId = prefs.getString("device_id", defaultId) ?: defaultId
         val deviceToken = prefs.getString("device_token", defaultToken) ?: defaultToken

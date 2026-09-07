@@ -200,7 +200,6 @@ class LocationService : Service() {
         serviceScope.launch {
             var statusSyncCounter = 0
             val devicesToPoll = listOf(
-                Pair("bdca7649-e699-4d57-a59a-e80a4db9e1de", "ca65a717-1185-417b-b8fc-32289812d8eb"),
                 Pair("19de15a1-d3fe-4ed2-9bb3-b4b5821bba3c", "d4d93059-eb8a-4c24-afb7-4ad5770cf798")
             )
 
