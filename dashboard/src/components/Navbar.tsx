@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Shield, LayoutDashboard, MapPin, History, Map, Radio, ShieldAlert, LogOut } from 'lucide-react';
+import { Shield, LayoutDashboard, MapPin, Radio, ShieldAlert, LogOut, Headphones } from 'lucide-react';
 import { authApi } from '../services/api';
 import { User } from '../types';
 
@@ -22,6 +22,7 @@ export const Navbar: React.FC<NavbarProps> = ({ user, setUser }) => {
   const navItems = [
     { label: 'Overview', path: '/', icon: LayoutDashboard },
     { label: 'Live Location', path: '/live', icon: MapPin },
+    { label: 'Live Audio', path: '/audio', icon: Headphones },
     { label: 'Commands', path: '/commands', icon: Radio },
     { label: 'Audit Logs', path: '/audit', icon: ShieldAlert },
   ];
