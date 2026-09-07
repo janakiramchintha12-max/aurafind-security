@@ -22,6 +22,15 @@ async def create_snapshot(
     if not device:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid device credentials")
 
+    if device.enrollment_status == "REVOKED":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Device enrollment has been revoked")
+
+    if not snapshot_in.is_intruder_alert and device.camera_privacy_state == "PAUSED_BY_DEVICE_USER":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Camera access is paused by device user. Snapshot rejected."
+        )
+
     snap = Snapshot(
         device_id=device_id,
         image_data=snapshot_in.image_data,
@@ -60,6 +69,8 @@ def list_snapshots(
     device: Device = Depends(verify_device_ownership),
     db: Session = Depends(get_db)
 ):
+    if device.enrollment_status == "REVOKED":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Device enrollment has been revoked")
     snapshots = (
         db.query(Snapshot)
         .filter(Snapshot.device_id == device.id)

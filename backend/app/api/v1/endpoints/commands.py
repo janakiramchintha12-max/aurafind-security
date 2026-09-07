@@ -39,6 +39,9 @@ async def dispatch_command(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    if device.enrollment_status == "REVOKED":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Device enrollment has been revoked")
+
     if command_in.command_type not in ALLOWED_COMMAND_TYPES:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -58,13 +61,22 @@ async def dispatch_command(
             )
 
     if command_in.command_type in {"START_VOICE_CALL"}:
-        if device.microphone_privacy_state == "PAUSED_BY_DEVICE_USER":
+        if device.microphone_privacy_state == "PAUSED_BY_DEVICE_USER" and device.speaker_privacy_state == "PAUSED_BY_DEVICE_USER":
+            detail_msg = "Microphone and speaker remote access is paused by the physical device user."
+        elif device.microphone_privacy_state == "PAUSED_BY_DEVICE_USER":
+            detail_msg = "Microphone remote access is paused by the physical device user."
+        elif device.speaker_privacy_state == "PAUSED_BY_DEVICE_USER":
+            detail_msg = "Speaker remote access is paused by the physical device user."
+        else:
+            detail_msg = None
+
+        if detail_msg:
             log_audit(db, user_id=current_user.id, device_id=device.id, action="REMOTE_MIC_REQUEST_REJECTED",
                       resource=f"device:{device.id}:mic",
-                      details=f"Remote command '{command_in.command_type}' rejected: Microphone access paused by physical device user.")
+                      details=f"Remote command '{command_in.command_type}' rejected: {detail_msg}")
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Microphone remote access is paused by the physical device user."
+                detail=detail_msg
             )
 
     if command_in.command_type in {"SPEAK_TEXT", "PLAY_ALARM"}:
@@ -77,7 +89,7 @@ async def dispatch_command(
                 detail="Speaker and siren remote access is paused by the physical device user."
             )
 
-    if command_in.command_type in {"LOCATE_NOW", "HIGH_ACCURACY_MODE"}:
+    if command_in.command_type in {"LOCATE_NOW", "HIGH_ACCURACY_MODE", "FORCE_SYNC"}:
         if device.location_privacy_state == "PAUSED_BY_DEVICE_USER":
             log_audit(db, user_id=current_user.id, device_id=device.id, action="REMOTE_LOCATION_REQUEST_REJECTED",
                       resource=f"device:{device.id}:location",
@@ -140,6 +152,9 @@ def get_device_commands(
     device: Device = Depends(verify_device_ownership),
     db: Session = Depends(get_db)
 ):
+    if device.enrollment_status == "REVOKED":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Device enrollment has been revoked")
+
     commands = (
         db.query(Command)
         .filter(Command.device_id == device.id)
@@ -159,8 +174,11 @@ def get_pending_commands_for_device(
     if not device:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid device credentials")
 
+    if device.enrollment_status == "REVOKED":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Device enrollment has been revoked")
+
     now = datetime.now(timezone.utc)
-    pending = (
+    all_pending = (
         db.query(Command)
         .filter(
             Command.device_id == device_id,
@@ -169,7 +187,31 @@ def get_pending_commands_for_device(
         )
         .all()
     )
-    return pending
+
+    valid_pending = []
+    for cmd in all_pending:
+        # Check if sensor was paused after command was dispatched (Stale Race Condition Prevention)
+        is_invalid = False
+        if cmd.command_type in {"START_CAMERA_STREAM", "SWITCH_CAMERA", "CAPTURE_SNAPSHOT"} and device.camera_privacy_state == "PAUSED_BY_DEVICE_USER":
+            is_invalid = True
+        elif cmd.command_type in {"START_VOICE_CALL"} and (device.microphone_privacy_state == "PAUSED_BY_DEVICE_USER" or device.speaker_privacy_state == "PAUSED_BY_DEVICE_USER"):
+            is_invalid = True
+        elif cmd.command_type in {"PLAY_ALARM", "SPEAK_TEXT"} and device.speaker_privacy_state == "PAUSED_BY_DEVICE_USER":
+            is_invalid = True
+        elif cmd.command_type in {"LOCATE_NOW", "HIGH_ACCURACY_MODE", "FORCE_SYNC"} and device.location_privacy_state == "PAUSED_BY_DEVICE_USER":
+            is_invalid = True
+        elif device.remote_controls_state == "RESTRICTED" and cmd.command_type not in {"STOP_ALARM", "STOP_CAMERA_STREAM", "END_VOICE_CALL"}:
+            is_invalid = True
+
+        if is_invalid:
+            cmd.status = "FAILED"
+            cmd.result = "REJECTED: Sensor access was paused by device user prior to delivery"
+            cmd.executed_at = now
+        else:
+            valid_pending.append(cmd)
+
+    db.commit()
+    return valid_pending
 
 @router.patch("/{device_id}/commands/{command_id}/result", response_model=CommandResponse)
 async def update_command_result(
@@ -182,6 +224,9 @@ async def update_command_result(
     device = db.query(Device).filter(Device.id == device_id, Device.device_token == x_device_token).first()
     if not device:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid device credentials")
+
+    if device.enrollment_status == "REVOKED":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Device enrollment has been revoked")
 
     cmd = db.query(Command).filter(Command.id == command_id, Command.device_id == device_id).first()
     if not cmd:

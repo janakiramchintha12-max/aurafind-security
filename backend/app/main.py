@@ -145,32 +145,54 @@ async def websocket_endpoint(
     device_token: str = Query(None),
     device_id: str = Query(None)
 ):
-    if token:
-        payload = decode_token(token)
-        if not payload or payload.get("type") != "access":
-            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-            return
-        user_id = payload.get("sub")
-        await manager.connect_user(websocket, user_id)
-        try:
-            while True:
-                data = await websocket.receive_text()
-                if data == "ping":
-                    await websocket.send_text("pong")
-        except WebSocketDisconnect:
-            manager.disconnect_user(websocket, user_id)
+    from app.database.session import SessionLocal
+    from app.models.device import Device
+    from app.models.user import User
 
-    elif device_token and device_id:
-        await manager.connect_device(websocket, device_id)
-        try:
-            while True:
-                data = await websocket.receive_text()
-                if data == "ping":
-                    await websocket.send_text("pong")
-        except WebSocketDisconnect:
-            manager.disconnect_device(device_id)
-    else:
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+    db = SessionLocal()
+    try:
+        if token:
+            payload = decode_token(token)
+            if not payload or payload.get("type") != "access":
+                await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+                return
+            user_id = payload.get("sub")
+            user = db.query(User).filter(User.id == user_id).first()
+            if not user:
+                await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+                return
+
+            await manager.connect_user(websocket, user_id)
+            try:
+                while True:
+                    data = await websocket.receive_text()
+                    if data == "ping":
+                        await websocket.send_text("pong")
+            except WebSocketDisconnect:
+                manager.disconnect_user(websocket, user_id)
+
+        elif device_token and device_id:
+            device = db.query(Device).filter(
+                Device.id == device_id,
+                Device.device_token == device_token,
+                Device.enrollment_status != "REVOKED"
+            ).first()
+            if not device:
+                await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+                return
+
+            await manager.connect_device(websocket, device_id)
+            try:
+                while True:
+                    data = await websocket.receive_text()
+                    if data == "ping":
+                        await websocket.send_text("pong")
+            except WebSocketDisconnect:
+                manager.disconnect_device(device_id)
+        else:
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+    finally:
+        db.close()
 
 # Mount compiled React dashboard for 1-Click Cloud Deployment
 import os

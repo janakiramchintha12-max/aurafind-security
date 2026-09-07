@@ -26,6 +26,15 @@ async def create_location(
     if not device:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid device credentials")
 
+    if device.enrollment_status == "REVOKED":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Device enrollment has been revoked")
+
+    if device.location_privacy_state == "PAUSED_BY_DEVICE_USER":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Location telemetry is paused by device user. Telemetry rejected."
+        )
+
     # Duplicate check within 2 seconds
     client_dt = location_in.client_timestamp
     if client_dt.tzinfo is None:
@@ -96,6 +105,15 @@ async def batch_upload_locations(
     device = db.query(Device).filter(Device.id == device_id, Device.device_token == x_device_token).first()
     if not device:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid device credentials")
+
+    if device.enrollment_status == "REVOKED":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Device enrollment has been revoked")
+
+    if device.location_privacy_state == "PAUSED_BY_DEVICE_USER":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Location telemetry is paused by device user. Batch telemetry rejected."
+        )
 
     batch_id = str(uuid.uuid4())
     processed_count = 0
@@ -180,6 +198,9 @@ def get_location_history(
     device: Device = Depends(verify_device_ownership),
     db: Session = Depends(get_db)
 ):
+    if device.enrollment_status == "REVOKED":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Device enrollment has been revoked")
+
     now = datetime.now(timezone.utc)
     query = db.query(Location).filter(Location.device_id == device_id)
 

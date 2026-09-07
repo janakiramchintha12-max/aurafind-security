@@ -1,4 +1,4 @@
-﻿package com.findmydevice.security.util
+package com.findmydevice.security.util
 
 import android.content.Context
 import android.content.SharedPreferences
@@ -74,26 +74,86 @@ object PrivacyManager {
     fun getSpeakerState(context: Context): String = if (isSpeakerPaused(context)) "PAUSED_BY_DEVICE_USER" else "ALLOWED"
     fun getControlsState(context: Context): String = if (isControlsRestricted(context)) "RESTRICTED" else "ALLOWED"
 
+    private const val GENESIS_HASH = "GENESIS_AURA_PRIVACY_ROOT_000000000000"
+
+    private fun sha256(input: String): String {
+        val bytes = java.security.MessageDigest.getInstance("SHA-256").digest(input.toByteArray(Charsets.UTF_8))
+        return bytes.joinToString("") { "%02x".format(it) }
+    }
+
     private fun logActivity(context: Context, action: String) {
         try {
             val prefs = getPrefs(context)
             val existingJson = prefs.getString(KEY_ACTIVITY_LOGS, "[]") ?: "[]"
             val array = JSONArray(existingJson)
-            
+
+            // Determine previous entry hash from latest block in chain
+            val prevHash = if (array.length() > 0) {
+                array.getJSONObject(0).optString("entry_hash", GENESIS_HASH)
+            } else {
+                GENESIS_HASH
+            }
+
+            val epoch = System.currentTimeMillis()
+            val timestampStr = SimpleDateFormat("MMM dd, HH:mm:ss", Locale.getDefault()).format(Date(epoch))
+            val entryPayload = "$prevHash:$action:$epoch:$timestampStr"
+            val entryHash = sha256(entryPayload)
+
             val entry = JSONObject().apply {
                 put("action", action)
-                put("timestamp", SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault()).format(Date()))
-                put("epoch", System.currentTimeMillis())
+                put("timestamp", timestampStr)
+                put("epoch", epoch)
+                put("prev_hash", prevHash)
+                put("entry_hash", entryHash)
             }
-            
+
             val newArray = JSONArray()
             newArray.put(entry)
-            for (i in 0 until minOf(array.length(), 29)) {
+            for (i in 0 until minOf(array.length(), 49)) {
                 newArray.put(array.getJSONObject(i))
             }
             prefs.edit().putString(KEY_ACTIVITY_LOGS, newArray.toString()).apply()
         } catch (e: Exception) {
             e.printStackTrace()
+        }
+    }
+
+    /**
+     * Verifies the cryptographic hash-chain integrity of local privacy audit records.
+     * Returns Pair(isValid, detailMessage).
+     */
+    fun verifyAuditChainIntegrity(context: Context): Pair<Boolean, String> {
+        try {
+            val json = getPrefs(context).getString(KEY_ACTIVITY_LOGS, "[]") ?: "[]"
+            val array = JSONArray(json)
+            if (array.length() == 0) return Pair(true, "Audit chain is empty (Genesis state).")
+
+            // Traverse from newest to oldest and verify each block's cryptographic hash
+            for (i in 0 until array.length()) {
+                val item = array.getJSONObject(i)
+                val action = item.getString("action")
+                val timestampStr = item.getString("timestamp")
+                val epoch = item.getLong("epoch")
+                val prevHash = item.getString("prev_hash")
+                val storedEntryHash = item.getString("entry_hash")
+
+                val expectedHash = sha256("$prevHash:$action:$epoch:$timestampStr")
+                if (expectedHash != storedEntryHash) {
+                    return Pair(false, "Cryptographic integrity violation detected at block index $i: Tampered payload!")
+                }
+
+                // Check chain linkage to next older block if present
+                if (i < array.length() - 1) {
+                    val olderItem = array.getJSONObject(i + 1)
+                    val olderHash = olderItem.getString("entry_hash")
+                    if (prevHash != olderHash) {
+                        return Pair(false, "Cryptographic chain linkage broken between block $i and block ${i + 1}!")
+                    }
+                }
+            }
+            return Pair(true, "Cryptographic hash-chain verified: 100% Tamper-Evident (${array.length()} blocks valid).")
+        } catch (e: Exception) {
+            return Pair(false, "Verification error: ${e.message}")
         }
     }
 

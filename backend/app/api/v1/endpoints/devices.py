@@ -5,7 +5,15 @@ from sqlalchemy.orm import Session
 from app.database.session import get_db
 from app.models.user import User
 from app.models.device import Device
-from app.schemas.device import DeviceRegister, DeviceStatusUpdate, DeviceUpdate, DeviceResponse
+from app.schemas.device import (
+    DeviceRegister,
+    DeviceStatusUpdate,
+    DeviceUpdate,
+    DeviceResponse,
+    DeviceChallengeResponse,
+    DeviceEnrollmentRequest,
+    DevicePrivacyStateUpdate
+)
 from app.api.v1.deps import get_current_user, verify_device_ownership, log_audit
 from app.services.websocket_manager import manager
 
@@ -98,8 +106,20 @@ async def update_device_status(
     if not device:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid device credentials")
 
+    if device.enrollment_status == "REVOKED":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Device enrollment has been revoked")
+
+    ALLOWED_STATUS_FIELDS = {
+        "battery_pct", "is_charging", "network_type", "wifi_status",
+        "sim_status", "sim_number", "gps_status", "permission_status",
+        "tracking_mode", "is_tracking_enabled", "is_lost_mode", "lost_mode_message",
+        "camera_privacy_state", "microphone_privacy_state", "location_privacy_state",
+        "speaker_privacy_state", "remote_controls_state"
+    }
+
     for field, val in status_in.model_dump(exclude_unset=True).items():
-        setattr(device, field, val)
+        if field in ALLOWED_STATUS_FIELDS:
+            setattr(device, field, val)
 
     device.last_heartbeat = datetime.now(timezone.utc)
     device.status = "ONLINE"
@@ -127,23 +147,50 @@ async def update_device_status(
 
     return device
 
+@router.post("/enroll/challenge")
+def get_enrollment_challenge(
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Issue cryptographically secure 5-minute challenge nonce for APK Proof-of-Possession.
+    """
+    from app.core.crypto_proof import generate_enrollment_challenge
+    return generate_enrollment_challenge(current_user.id)
+
 @router.post("/enroll", response_model=DeviceResponse, status_code=status.HTTP_201_CREATED)
 async def enroll_device(
-    enroll_in: DeviceRegister,
+    enroll_in: DeviceEnrollmentRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
-    Mandatory APK-Based Device Enrollment Flow:
-    Generates cryptographically secure device identity, registers device under authenticated account,
-    initializes default privacy-allowed states, and records immutable enrollment audit event.
+    Mandatory APK-Based Device Enrollment Flow with Cryptographic Proof-of-Possession:
+    Verifies signature over nonce against client's asymmetric public key.
     """
+    from app.core.crypto_proof import verify_proof_of_possession
+
+    # If cryptographic key is supplied, strictly verify proof-of-possession
+    if enroll_in.device_public_key and (enroll_in.enrollment_nonce or enroll_in.proof_signature):
+        valid = verify_proof_of_possession(
+            user_id=current_user.id,
+            device_name=enroll_in.device_name,
+            nonce=enroll_in.enrollment_nonce or "",
+            public_key_str=enroll_in.device_public_key,
+            signature_str=enroll_in.proof_signature or ""
+        )
+        if not valid:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Cryptographic proof-of-possession verification failed: Invalid or expired challenge signature."
+            )
+
     device = Device(
         user_id=current_user.id,
         device_name=enroll_in.device_name,
         device_model=enroll_in.device_model or "Android Handset",
         android_version=enroll_in.android_version or "14.0",
         app_version=enroll_in.app_version or "1.0.0",
+        device_public_key=enroll_in.device_public_key,
         status="ONLINE",
         enrollment_status="ENROLLED",
         camera_privacy_state="ALLOWED",
@@ -164,7 +211,7 @@ async def enroll_device(
         device_id=device.id,
         action="DEVICE_ENROLLED",
         resource=f"device:{device.id}",
-        details=f"Device '{device.device_name}' successfully enrolled via APK cryptographic handshake."
+        details=f"Device '{device.device_name}' successfully enrolled via APK cryptographic proof-of-possession."
     )
     return device
 
@@ -183,6 +230,9 @@ async def update_device_privacy_state(
     device = db.query(Device).filter(Device.id == device_id, Device.device_token == x_device_token).first()
     if not device:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid device credentials")
+
+    if device.enrollment_status == "REVOKED":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Device enrollment has been revoked")
 
     audit_details = []
 
@@ -261,6 +311,9 @@ async def device_heartbeat(
     device = db.query(Device).filter(Device.id == device_id, Device.device_token == x_device_token).first()
     if not device:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid device credentials")
+
+    if device.enrollment_status == "REVOKED":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Device enrollment has been revoked")
     
     device.last_heartbeat = datetime.now(timezone.utc)
     device.status = "ONLINE"

@@ -15,6 +15,11 @@ class DevicePrivacyStateUpdate(BaseModel):
     speaker_privacy_state: Optional[str] = None # "ALLOWED" or "PAUSED_BY_DEVICE_USER"
     remote_controls_state: Optional[str] = None # "ALLOWED" or "RESTRICTED"
 
+class DeviceChallengeResponse(BaseModel):
+    nonce: str
+    expires_at: str
+    user_id: str
+
 class DeviceEnrollmentRequest(BaseModel):
     device_name: str
     device_model: Optional[str] = "Unknown Model"
@@ -22,6 +27,7 @@ class DeviceEnrollmentRequest(BaseModel):
     app_version: Optional[str] = "1.0.0"
     device_public_key: Optional[str] = None
     enrollment_nonce: Optional[str] = None
+    proof_signature: Optional[str] = None
 
 class DeviceEnrollmentResponse(BaseModel):
     device_id: str
@@ -59,11 +65,6 @@ class DeviceUpdate(BaseModel):
     is_tracking_enabled: Optional[bool] = None
     is_lost_mode: Optional[bool] = None
     lost_mode_message: Optional[str] = None
-    camera_privacy_state: Optional[str] = None
-    microphone_privacy_state: Optional[str] = None
-    location_privacy_state: Optional[str] = None
-    speaker_privacy_state: Optional[str] = None
-    remote_controls_state: Optional[str] = None
 
 class DeviceResponse(BaseModel):
     id: str

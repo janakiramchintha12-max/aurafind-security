@@ -29,6 +29,9 @@ async def push_camera_frame(
     if not device:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid device credentials")
 
+    if device.enrollment_status == "REVOKED":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Device enrollment has been revoked")
+
     if device.camera_privacy_state == "PAUSED_BY_DEVICE_USER":
         latest_device_frames.pop(device_id, None)
         raise HTTPException(
@@ -59,6 +62,9 @@ async def push_camera_frame(
 def get_latest_camera_frame(
     device: Device = Depends(verify_device_ownership)
 ):
+    if device.enrollment_status == "REVOKED":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Device enrollment has been revoked")
+
     if device.camera_privacy_state == "PAUSED_BY_DEVICE_USER":
         return {"has_frame": False, "image_data": None, "facing": "FRONT", "privacy_state": "PAUSED_BY_DEVICE_USER"}
 

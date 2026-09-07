@@ -29,12 +29,22 @@ def get_buffer(buf_dict: Dict[str, deque], key: str) -> deque:
 async def push_audio_chunk(
     device_id: str,
     payload: AudioChunkPayload,
-    x_device_token: Optional[str] = Header(None, alias="X-Device-Token"),
+    x_device_token: str = Header(..., alias="X-Device-Token"),
     db: Session = Depends(get_db)
 ):
-    device = db.query(Device).filter(Device.id == device_id).first()
+    device = db.query(Device).filter(Device.id == device_id, Device.device_token == x_device_token).first()
     if not device:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid device credentials")
+
+    if device.enrollment_status == "REVOKED":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Device enrollment has been revoked")
+
+    if device.microphone_privacy_state == "PAUSED_BY_DEVICE_USER":
+        device_to_dashboard_buffers.pop(device_id, None)
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Microphone access is paused by device user. Audio chunk rejected."
+        )
 
     if payload.direction == "DEVICE_TO_DASHBOARD":
         buf = get_buffer(device_to_dashboard_buffers, device_id)
@@ -57,6 +67,16 @@ async def send_dashboard_audio(
     payload: AudioChunkPayload,
     device: Device = Depends(verify_device_ownership)
 ):
+    if device.enrollment_status == "REVOKED":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Device enrollment has been revoked")
+
+    if device.speaker_privacy_state == "PAUSED_BY_DEVICE_USER":
+        dashboard_to_device_buffers.pop(device.id, None)
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Loudspeaker is paused by device user. Outgoing audio rejected."
+        )
+
     buf = get_buffer(dashboard_to_device_buffers, device.id)
     buf.append(payload.audio_data)
     return {"status": "ok"}
@@ -67,6 +87,17 @@ def poll_incoming_audio_for_device(
     x_device_token: str = Header(..., alias="X-Device-Token"),
     db: Session = Depends(get_db)
 ) -> List[str]:
+    device = db.query(Device).filter(Device.id == device_id, Device.device_token == x_device_token).first()
+    if not device:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid device credentials")
+
+    if device.enrollment_status == "REVOKED":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Device enrollment has been revoked")
+
+    if device.speaker_privacy_state == "PAUSED_BY_DEVICE_USER":
+        dashboard_to_device_buffers.pop(device_id, None)
+        return []
+
     buf = get_buffer(dashboard_to_device_buffers, device_id)
     chunks = []
     while buf:
@@ -77,6 +108,13 @@ def poll_incoming_audio_for_device(
 def poll_incoming_audio_for_dashboard(
     device: Device = Depends(verify_device_ownership)
 ) -> List[str]:
+    if device.enrollment_status == "REVOKED":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Device enrollment has been revoked")
+
+    if device.microphone_privacy_state == "PAUSED_BY_DEVICE_USER":
+        device_to_dashboard_buffers.pop(device.id, None)
+        return []
+
     buf = get_buffer(device_to_dashboard_buffers, device.id)
     chunks = []
     while buf:
