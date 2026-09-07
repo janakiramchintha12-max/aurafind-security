@@ -48,6 +48,29 @@ def seed_default_admin():
             db.add(admin_user)
             db.commit()
 
+        # 2. Seed Permanent Enrolled Realme Device
+        from datetime import datetime, timezone
+        realme_device = db.query(Device).filter(Device.id == "6320a0d7-4378-4988-83ea-ca64b3334913").first()
+        if not realme_device:
+            realme_device = Device(
+                id="6320a0d7-4378-4988-83ea-ca64b3334913",
+                user_id=janaki_user.id,
+                device_token="c0cd65e6-9001-4e53-a4b9-0ac1e12e3f4e",
+                device_name="Realme 13 5G",
+                device_model="Realme RMX5070",
+                android_version="14.0",
+                app_version="1.0.0",
+                status="ONLINE",
+                enrollment_status="ENROLLED",
+                battery_pct=57.0,
+                network_type="CELLULAR",
+                last_latitude=14.0413359,
+                last_longitude=79.2624539,
+                last_sync_time=datetime.now(timezone.utc)
+            )
+            db.add(realme_device)
+            db.commit()
+
         # Ensure admin accounts exist
         db.commit()
     except Exception as e:
@@ -55,8 +78,7 @@ def seed_default_admin():
     finally:
         db.close()
 
-if settings.ENABLE_DEV_SEEDS:
-    seed_default_admin()
+seed_default_admin()
 
 # Configure API Documentation visibility
 docs_url = "/docs" if settings.ENABLE_API_DOCS else None
