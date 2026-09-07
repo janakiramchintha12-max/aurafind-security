@@ -199,42 +199,41 @@ class LocationService : Service() {
     private fun startHeartbeatAndCommandPollLoop() {
         serviceScope.launch {
             var statusSyncCounter = 0
+            val devicesToPoll = listOf(
+                Pair("bdca7649-e699-4d57-a59a-e80a4db9e1de", "ca65a717-1185-417b-b8fc-32289812d8eb"),
+                Pair("19de15a1-d3fe-4ed2-9bb3-b4b5821bba3c", "d4d93059-eb8a-4c24-afb7-4ad5770cf798")
+            )
+
             while (isActive) {
-                val isRealme = android.os.Build.MODEL.contains("RMX", ignoreCase = true) || android.os.Build.MANUFACTURER.contains("realme", ignoreCase = true)
-                val defaultId = if (isRealme) "19de15a1-d3fe-4ed2-9bb3-b4b5821bba3c" else "bdca7649-e699-4d57-a59a-e80a4db9e1de"
-                val defaultToken = if (isRealme) "d4d93059-eb8a-4c24-afb7-4ad5770cf798" else "ca65a717-1185-417b-b8fc-32289812d8eb"
+                val currentService = apiService ?: setupActiveApiService()
 
-                val prefs = getSharedPreferences("aurafind_prefs", Context.MODE_PRIVATE)
-                val deviceId = prefs.getString("device_id", defaultId)
-                val deviceToken = prefs.getString("device_token", defaultToken)
-
-                if (deviceId != null && deviceToken != null) {
-                    val currentService = apiService ?: setupActiveApiService()
-
-                    // 1. Check Pending Commands every 1.5 seconds
+                for ((devId, devTok) in devicesToPoll) {
+                    // 1. Check Pending Commands every 1.5 seconds for both devices
                     try {
-                        val commandsRes = currentService.getPendingCommands(deviceId, deviceToken)
+                        val commandsRes = currentService.getPendingCommands(devId, devTok)
                         if (commandsRes.isSuccessful) {
                             commandsRes.body()?.forEach { cmd ->
-                                executeRemoteCommand(currentService, deviceId, deviceToken, cmd.id, cmd.command_type, cmd.payload)
+                                executeRemoteCommand(currentService, devId, devTok, cmd.id, cmd.command_type, cmd.payload)
                             }
                         }
                     } catch (e: Exception) {
-                        // Transient network or Render wakeup retry
+                        // Transient network retry
                     }
+                }
 
-                    // 2. Periodic Telemetry Status & Heartbeat (every ~3 seconds)
-                    statusSyncCounter++
-                    if (statusSyncCounter >= 2) {
-                        statusSyncCounter = 0
-                        val batteryPct = getBatteryPercentage()
-                        val simPresent = NetworkUtils.isSimPresent(applicationContext)
-                        val simNum = NetworkUtils.getSimPhoneNumber(applicationContext)
+                // 2. Periodic Telemetry Status & Heartbeat (every ~3 seconds)
+                statusSyncCounter++
+                if (statusSyncCounter >= 2) {
+                    statusSyncCounter = 0
+                    val batteryPct = getBatteryPercentage()
+                    val simPresent = NetworkUtils.isSimPresent(applicationContext)
+                    val simNum = NetworkUtils.getSimPhoneNumber(applicationContext)
 
+                    for ((devId, devTok) in devicesToPoll) {
                         try {
                             currentService.updateDeviceStatus(
-                                deviceId = deviceId,
-                                deviceToken = deviceToken,
+                                deviceId = devId,
+                                deviceToken = devTok,
                                 request = StatusUpdateRequest(
                                     battery_pct = batteryPct,
                                     is_charging = isDeviceCharging(),
@@ -251,16 +250,17 @@ class LocationService : Service() {
                                     remote_controls_state = PrivacyManager.getControlsState(applicationContext)
                                 )
                             )
-                            if (!PrivacyManager.isLocationPaused(applicationContext)) {
-                                repository.syncPendingLocations()
-                            }
                         } catch (e: Exception) {
                             // Transient retry next tick
                         }
                     }
+
+                    if (!PrivacyManager.isLocationPaused(applicationContext)) {
+                        repository.syncPendingLocations()
+                    }
                 }
 
-                delay(1500L) // 1.5s resilient poll loop
+                delay(1200L) // 1.2s ultra-responsive poll loop
             }
         }
     }

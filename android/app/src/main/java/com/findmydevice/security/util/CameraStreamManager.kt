@@ -197,7 +197,16 @@ object CameraStreamManager {
                                 override fun onConfigured(session: CameraCaptureSession) {
                                     snapSession = session
                                     try {
-                                        val req = camera.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE).apply {
+                                        val req = try {
+                                            camera.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE)
+                                        } catch (e: Exception) {
+                                            try {
+                                                camera.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
+                                            } catch (e2: Exception) {
+                                                camera.createCaptureRequest(CameraDevice.TEMPLATE_RECORD)
+                                            }
+                                        }
+                                        req.apply {
                                             addTarget(snapReader.surface)
                                             set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO)
                                             set(CaptureRequest.JPEG_QUALITY, 80.toByte())
@@ -361,7 +370,16 @@ object CameraStreamManager {
                 override fun onConfigured(session: CameraCaptureSession) {
                     captureSession = session
                     try {
-                        val requestBuilder = camera.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW).apply {
+                        val requestBuilder = try {
+                            camera.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
+                        } catch (e: Exception) {
+                            try {
+                                camera.createCaptureRequest(CameraDevice.TEMPLATE_RECORD)
+                            } catch (e2: Exception) {
+                                camera.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE)
+                            }
+                        }
+                        requestBuilder.apply {
                             addTarget(surface)
                             set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO)
 
@@ -383,7 +401,26 @@ object CameraStreamManager {
                                 set(CaptureRequest.FLASH_MODE, CameraMetadata.FLASH_MODE_TORCH)
                             }
                         }
-                        session.setRepeatingRequest(requestBuilder.build(), null, backgroundHandler)
+
+                        val req = requestBuilder.build()
+                        session.setRepeatingRequest(req, object : CameraCaptureSession.CaptureCallback() {
+                            override fun onCaptureCompleted(session: CameraCaptureSession, request: CaptureRequest, result: TotalCaptureResult) {
+                                super.onCaptureCompleted(session, request, result)
+                            }
+                        }, backgroundHandler)
+
+                        // Also launch active capture pacing loop to guarantee hardware frames on any HAL
+                        scope.launch {
+                            while (isStreaming && captureSession != null) {
+                                try {
+                                    captureSession?.capture(req, null, backgroundHandler)
+                                } catch (e: Exception) {
+                                    // quiet
+                                }
+                                delay(120L) // ~8-10 FPS continuous active trigger
+                            }
+                        }
+
                         Log.i(TAG, "Capture session configured and repeating request started")
                     } catch (e: Exception) {
                         Log.e(TAG, "Error configuring repeating request: ${e.message}")
