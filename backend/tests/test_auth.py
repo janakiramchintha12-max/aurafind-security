@@ -38,3 +38,17 @@ def test_refresh_token(client, test_user):
     )
     assert ref_res.status_code == 200
     assert "access_token" in ref_res.json()
+
+def test_security_headers_and_observability(client):
+    res = client.get("/health/live")
+    assert res.status_code == 200
+    assert res.json() == {"status": "alive"}
+    assert "x-request-id" in res.headers
+    assert res.headers.get("x-content-type-options") == "nosniff"
+    assert res.headers.get("x-frame-options") == "DENY"
+
+def test_database_readiness_health(client):
+    res = client.get("/health/ready")
+    assert res.status_code == 200
+    assert res.json() == {"status": "ready", "database": "connected"}
+

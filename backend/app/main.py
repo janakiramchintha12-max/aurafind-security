@@ -1,4 +1,7 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, Query, status
+import uuid
+import time
+import logging
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, Query, Request, Response, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.database.session import engine, Base
@@ -6,7 +9,7 @@ from app.api.v1.endpoints import auth, devices, locations, commands, geofences, 
 from app.services.websocket_manager import manager
 from app.core.security import decode_token
 
-# Initialize Database tables and seed default admin
+# Initialize Database tables
 Base.metadata.create_all(bind=engine)
 
 def seed_default_admin():
@@ -87,16 +90,54 @@ def seed_default_admin():
             realme_dev.user_id = janaki_user.id
             db.commit()
     except Exception as e:
-        print("Seed error:", e)
+        logging.getLogger("aurafind.auth").warning(f"Development seed skipped: {e}")
     finally:
         db.close()
 
-seed_default_admin()
+if settings.ENABLE_DEV_SEEDS:
+    seed_default_admin()
+
+# Configure API Documentation visibility
+docs_url = "/docs" if settings.ENABLE_API_DOCS else None
+redoc_url = "/redoc" if settings.ENABLE_API_DOCS else None
+openapi_url = f"{settings.API_V1_STR}/openapi.json" if settings.ENABLE_API_DOCS else None
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
-    openapi_url=f"{settings.API_V1_STR}/openapi.json"
+    docs_url=docs_url,
+    redoc_url=redoc_url,
+    openapi_url=openapi_url
 )
+
+# Security Headers & Correlation ID Middleware
+@app.middleware("http")
+async def security_headers_and_observability_middleware(request: Request, call_next):
+    request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
+    start_time = time.time()
+
+    response: Response = await call_next(request)
+
+    process_time_ms = (time.time() - start_time) * 1000
+    response.headers["X-Request-ID"] = request_id
+    response.headers["X-Process-Time-MS"] = f"{process_time_ms:.2f}"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "img-src 'self' data: blob: https:; "
+        "script-src 'self' 'unsafe-inline' https:; "
+        "style-src 'self' 'unsafe-inline' https:; "
+        "connect-src 'self' https: wss: ws:; "
+        "font-src 'self' data: https:; "
+        "frame-ancestors 'none';"
+    )
+
+    if request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https":
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+
+    return response
 
 # Set up CORS
 app.add_middleware(
@@ -120,7 +161,31 @@ app.include_router(audit.router, prefix=f"{settings.API_V1_STR}/audit-logs", tag
 
 @app.get("/health")
 def health_check():
-    return {"status": "healthy", "project": settings.PROJECT_NAME}
+    return {
+        "status": "healthy",
+        "project": settings.PROJECT_NAME,
+        "environment": settings.ENVIRONMENT
+    }
+
+@app.get("/health/live")
+def liveness_check():
+    return {"status": "alive"}
+
+@app.get("/health/ready")
+def readiness_check():
+    from app.database.session import SessionLocal
+    from sqlalchemy import text
+    db = SessionLocal()
+    try:
+        db.execute(text("SELECT 1"))
+        return {"status": "ready", "database": "connected"}
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database connection unavailable"
+        )
+    finally:
+        db.close()
 
 @app.get("/download/app.apk")
 def download_app_apk():

@@ -9,6 +9,15 @@ android/app/build/
 android/.gradle/
 android/local.properties
 .env
+.env.local
+.env.production
 .idea/
 .vscode/
 cloudflared.exe
+new_device_creds.json
+aurafind_prefs.xml
+*.keystore
+*.jks
+*.apk
+secrets/
+
