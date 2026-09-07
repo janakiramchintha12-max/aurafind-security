@@ -29,7 +29,8 @@ ALLOWED_COMMAND_TYPES = {
     "STOP_CAMERA_STREAM",
     "SWITCH_CAMERA",
     "START_VOICE_CALL",
-    "END_VOICE_CALL"
+    "END_VOICE_CALL",
+    "RECORD_AUDIO_CLIP"
 }
 
 @router.post("/{device_id}/commands", response_model=CommandResponse, status_code=status.HTTP_201_CREATED)
