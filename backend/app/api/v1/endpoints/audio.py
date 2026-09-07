@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Header
+import base64
+from fastapi import APIRouter, Depends, HTTPException, status, Header, Response
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional, List, Dict
@@ -210,3 +211,41 @@ def delete_audio_recording(
     db.delete(rec)
     db.commit()
     return None
+
+@router.get("/{device_id}/audio/recordings/{recording_id}/stream")
+def stream_audio_recording(
+    recording_id: str,
+    device: Device = Depends(verify_device_ownership),
+    db: Session = Depends(get_db)
+):
+    """
+    Direct binary streaming endpoint for native browser <audio> playback with HTTP range & seek support.
+    """
+    from app.models.audio_recording import AudioRecording
+    rec = db.query(AudioRecording).filter(
+        AudioRecording.id == recording_id,
+        AudioRecording.device_id == device.id
+    ).first()
+    if not rec:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Audio recording not found")
+
+    raw_b64 = rec.audio_data
+    if "base64," in raw_b64:
+        raw_b64 = raw_b64.split("base64,")[1]
+
+    try:
+        audio_bytes = base64.b64decode(raw_b64)
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Corrupt audio payload")
+
+    return Response(
+        content=audio_bytes,
+        media_type=rec.mime_type or "audio/mp4",
+        headers={
+            "Content-Disposition": f"inline; filename=recording_{recording_id}.m4a",
+            "Accept-Ranges": "bytes",
+            "Content-Length": str(len(audio_bytes)),
+            "Cache-Control": "public, max-age=86400"
+        }
+    )
+

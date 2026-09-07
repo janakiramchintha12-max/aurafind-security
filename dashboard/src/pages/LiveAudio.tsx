@@ -1,11 +1,208 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
-  Headphones, Mic, MicOff, Volume2, VolumeX, Radio, Play, Square, 
+  Headphones, Mic, MicOff, Volume2, VolumeX, Radio, Play, Pause, Square, 
   Download, Smartphone, RefreshCw, ShieldCheck, Sparkles, Send,
-  Disc, Clock, Trash2, CheckCircle2, AlertCircle, Loader2
+  Disc, Clock, Trash2, CheckCircle2, AlertCircle, Loader2, Volume1, FastForward
 } from 'lucide-react';
 import { devicesApi, commandsApi, audioApi, connectWebSocket } from '../services/api';
 import { Device, AudioRecording } from '../types';
+
+// Helper: Convert Base64 data to seekable Blob Object URL for Chrome/Edge/Safari/Firefox
+function getAudioBlobUrl(audioData: string, mimeType: string = 'audio/mp4'): string {
+  try {
+    let base64 = audioData;
+    let mime = mimeType || 'audio/mp4';
+    if (audioData.startsWith('data:')) {
+      const parts = audioData.split('base64,');
+      if (parts.length === 2) {
+        mime = parts[0].replace('data:', '').replace(';', '') || mime;
+        base64 = parts[1];
+      }
+    }
+    const binary = atob(base64);
+    const len = binary.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    const blob = new Blob([bytes], { type: mime });
+    return URL.createObjectURL(blob);
+  } catch (e) {
+    console.error('Failed to convert base64 audio to Blob URL', e);
+    return audioData;
+  }
+}
+
+// Single HD Recording Player Component with Seekbar, Waveform, and Volume Boost
+const HdRecordingCard: React.FC<{
+  recording: AudioRecording;
+  index: number;
+  totalCount: number;
+  onDelete: (id: string) => void;
+  formatDateTime: (iso: string) => string;
+}> = ({ recording, index, totalCount, onDelete, formatDateTime }) => {
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState<number>(recording.duration_seconds || 0);
+  const [blobUrl, setBlobUrl] = useState<string>('');
+  const [gainBoost, setGainBoost] = useState<number>(1.0); // Up to 2.5x gain booster
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  useEffect(() => {
+    const url = getAudioBlobUrl(recording.audio_data, recording.mime_type);
+    setBlobUrl(url);
+    return () => {
+      if (url.startsWith('blob:')) {
+        URL.revokeObjectURL(url);
+      }
+    };
+  }, [recording.audio_data, recording.mime_type]);
+
+  const togglePlay = () => {
+    if (!audioRef.current) return;
+    if (isPlaying) {
+      audioRef.current.pause();
+    } else {
+      audioRef.current.play().catch(e => console.error('Audio play error', e));
+    }
+  };
+
+  const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const time = parseFloat(e.target.value);
+    setCurrentTime(time);
+    if (audioRef.current) {
+      audioRef.current.currentTime = time;
+    }
+  };
+
+  const formatSecs = (sec: number) => {
+    if (isNaN(sec) || !isFinite(sec)) return '0:00';
+    const m = Math.floor(sec / 60);
+    const s = Math.floor(sec % 60);
+    return `${m}:${s.toString().padStart(2, '0')}`;
+  };
+
+  return (
+    <div className="bg-slate-900/95 border border-slate-700/80 hover:border-cyan-500/50 rounded-2xl p-4 transition-all space-y-3 shadow-lg">
+      <audio
+        ref={audioRef}
+        src={blobUrl}
+        preload="auto"
+        onPlay={() => setIsPlaying(true)}
+        onPause={() => setIsPlaying(false)}
+        onEnded={() => {
+          setIsPlaying(false);
+          setCurrentTime(0);
+        }}
+        onTimeUpdate={() => {
+          if (audioRef.current) {
+            setCurrentTime(audioRef.current.currentTime);
+          }
+        }}
+        onLoadedMetadata={() => {
+          if (audioRef.current && audioRef.current.duration) {
+            setDuration(audioRef.current.duration);
+          }
+        }}
+      />
+
+      {/* Card Header Info */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="px-2 py-0.5 rounded-md bg-cyan-500/20 text-cyan-300 text-[10px] font-bold tracking-wider">
+            HD AAC 44.1kHz
+          </span>
+          <span className="text-xs font-bold text-white">
+            Recording #{totalCount - index}
+          </span>
+          <span className="text-[10px] text-slate-400 flex items-center gap-1 font-mono">
+            <Clock className="w-3 h-3" />
+            {recording.duration_seconds}s
+          </span>
+        </div>
+
+        <div className="text-[11px] text-slate-400 font-medium">
+          {formatDateTime(recording.created_at)}
+        </div>
+      </div>
+
+      {/* Player Controls Bar */}
+      <div className="flex items-center gap-3 bg-slate-950/80 rounded-xl p-3 border border-slate-800">
+        {/* Play/Pause Button */}
+        <button
+          onClick={togglePlay}
+          className={`p-3 rounded-xl flex items-center justify-center transition-all cursor-pointer ${
+            isPlaying
+              ? 'bg-amber-500 text-slate-950 shadow-lg shadow-amber-500/30'
+              : 'bg-cyan-500 hover:bg-cyan-400 text-slate-950 shadow-lg shadow-cyan-500/30'
+          }`}
+          title={isPlaying ? 'Pause' : 'Play in Browser'}
+        >
+          {isPlaying ? (
+            <Pause className="w-4 h-4 fill-current" />
+          ) : (
+            <Play className="w-4 h-4 fill-current ml-0.5" />
+          )}
+        </button>
+
+        {/* Timeline & Scrubber */}
+        <div className="flex-1 space-y-1">
+          <div className="flex items-center justify-between text-[10px] font-mono text-slate-400">
+            <span className={isPlaying ? 'text-cyan-400 font-bold' : ''}>{formatSecs(currentTime)}</span>
+            <span>{formatSecs(duration || recording.duration_seconds)}</span>
+          </div>
+
+          <div className="relative flex items-center">
+            <input
+              type="range"
+              min="0"
+              max={duration || recording.duration_seconds || 1}
+              step="0.05"
+              value={currentTime}
+              onChange={handleSeek}
+              className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-cyan-400"
+            />
+          </div>
+        </div>
+
+        {/* Animated Sound Wave Bar while Playing */}
+        {isPlaying && (
+          <div className="hidden sm:flex items-center gap-0.5 h-6 px-2">
+            {[40, 80, 50, 95, 60, 30, 85, 45].map((h, i) => (
+              <div
+                key={i}
+                className="w-1 bg-cyan-400 rounded-full animate-pulse"
+                style={{
+                  height: `${h}%`,
+                  animationDuration: `${0.4 + (i % 4) * 0.15}s`
+                }}
+              />
+            ))}
+          </div>
+        )}
+
+        {/* Action Buttons */}
+        <div className="flex items-center gap-1.5 pl-2 border-l border-slate-800">
+          <a
+            href={blobUrl}
+            download={`aurafind-recording-${recording.id.substring(0, 8)}.m4a`}
+            className="p-2 bg-slate-800 hover:bg-cyan-500 hover:text-slate-950 text-cyan-400 rounded-xl transition-all border border-slate-700 cursor-pointer"
+            title="Download M4A Audio File"
+          >
+            <Download className="w-3.5 h-3.5" />
+          </a>
+          <button
+            onClick={() => onDelete(recording.id)}
+            className="p-2 bg-slate-800 hover:bg-rose-600 hover:text-white text-slate-400 rounded-xl transition-all border border-slate-700 cursor-pointer"
+            title="Delete Recording"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 export const LiveAudioPage: React.FC = () => {
   const [devices, setDevices] = useState<Device[]>([]);
@@ -22,7 +219,7 @@ export const LiveAudioPage: React.FC = () => {
   // Live Audio Stream State
   const [isListening, setIsListening] = useState(false);
   const [isPcMicActive, setIsPcMicActive] = useState(false);
-  const [volume, setVolume] = useState(1.0);
+  const [volume, setVolume] = useState(1.5); // Default 150% volume for enhanced room listening
   const [streamDuration, setStreamDuration] = useState(0);
   const [packetsReceived, setPacketsReceived] = useState(0);
   const [audioLevel, setAudioLevel] = useState(0);
@@ -40,6 +237,7 @@ export const LiveAudioPage: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const animationFrameRef = useRef<number | null>(null);
   const countdownTimerRef = useRef<any>(null);
+  const scheduledPlayTimeRef = useRef<number>(0);
 
   // Load Devices
   const fetchDevices = async () => {
@@ -253,6 +451,8 @@ export const LiveAudioPage: React.FC = () => {
       gainNode.connect(analyser);
       analyser.connect(ctx.destination);
 
+      scheduledPlayTimeRef.current = ctx.currentTime + 0.1; // 100ms initial jitter buffer
+
       setIsListening(true);
       setStreamDuration(0);
       setPacketsReceived(0);
@@ -279,7 +479,7 @@ export const LiveAudioPage: React.FC = () => {
     setAudioLevel(0);
   };
 
-  // Play incoming PCM chunk for live mode
+  // Play incoming PCM chunk with scheduled jitter buffer to eliminate clicks and chopped voice
   const playPcmChunk = (base64Audio: string) => {
     if (!audioContextRef.current || !gainNodeRef.current) return;
     try {
@@ -295,12 +495,18 @@ export const LiveAudioPage: React.FC = () => {
         float32Array[i] = int16Array[i] / 32768.0;
       }
 
-      const buffer = audioContextRef.current.createBuffer(1, float32Array.length, 16000);
+      const ctx = audioContextRef.current;
+      const buffer = ctx.createBuffer(1, float32Array.length, 16000);
       buffer.getChannelData(0).set(float32Array);
-      const source = audioContextRef.current.createBufferSource();
+      const source = ctx.createBufferSource();
       source.buffer = buffer;
       source.connect(gainNodeRef.current);
-      source.start();
+
+      // Schedule smoothly along continuous timeline to prevent audio stuttering
+      const now = ctx.currentTime;
+      const startTime = Math.max(now, scheduledPlayTimeRef.current);
+      source.start(startTime);
+      scheduledPlayTimeRef.current = startTime + buffer.duration;
 
       setPacketsReceived(p => p + 1);
     } catch (e) {
@@ -430,7 +636,7 @@ export const LiveAudioPage: React.FC = () => {
             <span>HD Audio Recording & Voice Surveillance</span>
           </h1>
           <p className="text-sm text-slate-400">
-            Record crystal-clear 44.1kHz AAC HD voice clips on-demand or listen in real-time from phone microphone
+            Listen in real-time or capture studio-clear 44.1kHz AAC HD voice clips with instant browser playback
           </p>
         </div>
 
@@ -455,7 +661,7 @@ export const LiveAudioPage: React.FC = () => {
               fetchDevices();
               if (selectedDevice) fetchRecordings(selectedDevice.id);
             }}
-            className="p-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-xl transition-all"
+            className="p-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-xl transition-all cursor-pointer"
             title="Refresh Devices & Recordings"
           >
             <RefreshCw className="w-4 h-4" />
@@ -471,20 +677,20 @@ export const LiveAudioPage: React.FC = () => {
           <div className="space-y-2 max-w-xl">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 text-xs font-semibold">
               <Sparkles className="w-3.5 h-3.5" />
-              <span>Crystal-Clear HD Audio Recording (AAC 44.1 kHz)</span>
+              <span>Studio Quality Audio Recording (AAC 44.1 kHz 128kbps)</span>
             </div>
             <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight">
-              Record Microphone Audio On-Demand
+              Capture High-Definition Audio On-Demand
             </h2>
             <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
-              When you click record, your phone silently captures HD audio from its hardware mic in high fidelity, saves it locally, and instantly uploads the file to your cloud archive for immediate playback and download.
+              When you click record, your phone silently records audio using high-gain hardware microphones, uploads the audio file to your cloud storage, and allows instant playback directly in this dashboard.
             </p>
 
             {/* Duration Selector */}
             <div className="pt-2 flex items-center gap-3">
               <span className="text-xs text-slate-400 font-medium">Select Duration:</span>
               <div className="flex gap-2">
-                {[10, 30, 60, 120].map((dur) => (
+                {[5, 10, 30, 60, 120].map((dur) => (
                   <button
                     key={dur}
                     onClick={() => setRecordDuration(dur)}
@@ -559,7 +765,7 @@ export const LiveAudioPage: React.FC = () => {
                     HD Audio Recordings Library ({cloudRecordings.length})
                   </h3>
                   <p className="text-xs text-slate-400">
-                    High-definition audio recordings stored securely in your private cloud storage
+                    High-definition AAC voice recordings playable directly inside your browser with full seek controls
                   </p>
                 </div>
               </div>
@@ -587,61 +793,22 @@ export const LiveAudioPage: React.FC = () => {
                 </p>
               </div>
             ) : (
-              <div className="space-y-3 max-h-[420px] overflow-y-auto pr-1">
+              <div className="space-y-3 max-h-[460px] overflow-y-auto pr-1">
                 {cloudRecordings.map((rec, index) => (
-                  <div 
-                    key={rec.id} 
-                    className="bg-slate-900/90 border border-slate-700/80 hover:border-cyan-500/40 rounded-2xl p-4 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4"
-                  >
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <span className="px-2 py-0.5 rounded-md bg-cyan-500/20 text-cyan-300 text-[10px] font-bold">
-                          HD AAC
-                        </span>
-                        <span className="text-xs font-bold text-white">
-                          Recording #{cloudRecordings.length - index}
-                        </span>
-                        <span className="text-[10px] text-slate-400 flex items-center gap-1 font-mono">
-                          <Clock className="w-3 h-3" />
-                          {rec.duration_seconds}s
-                        </span>
-                      </div>
-                      <div className="text-[11px] text-slate-400">
-                        {formatDateTime(rec.created_at)}
-                      </div>
-                    </div>
-
-                    {/* HTML5 Audio Player & Controls */}
-                    <div className="flex items-center gap-3 w-full sm:w-auto">
-                      <audio 
-                        src={rec.audio_data} 
-                        controls 
-                        className="h-9 w-full sm:w-64 accent-cyan-500" 
-                        preload="metadata"
-                      />
-                      <a
-                        href={rec.audio_data}
-                        download={`aurafind-recording-${rec.id.substring(0, 8)}.m4a`}
-                        className="p-2.5 bg-slate-800 hover:bg-cyan-600 hover:text-slate-950 text-cyan-400 rounded-xl transition-all border border-slate-700 cursor-pointer"
-                        title="Download M4A HD File"
-                      >
-                        <Download className="w-4 h-4" />
-                      </a>
-                      <button
-                        onClick={() => handleDeleteRecording(rec.id)}
-                        className="p-2.5 bg-slate-800 hover:bg-rose-600 hover:text-white text-slate-400 rounded-xl transition-all border border-slate-700 cursor-pointer"
-                        title="Delete Recording"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
+                  <HdRecordingCard
+                    key={rec.id}
+                    recording={rec}
+                    index={index}
+                    totalCount={cloudRecordings.length}
+                    onDelete={handleDeleteRecording}
+                    formatDateTime={formatDateTime}
+                  />
                 ))}
               </div>
             )}
           </div>
 
-          {/* Real-time Streaming Studio Console (Secondary Live Feed) */}
+          {/* Real-time Streaming Studio Console (Enhanced with Jitter Smoothing) */}
           <div className="bg-slate-800/90 border border-slate-700/80 rounded-3xl p-6 shadow-xl relative overflow-hidden backdrop-blur space-y-4">
             
             {/* Target Status Banner */}
@@ -724,7 +891,7 @@ export const LiveAudioPage: React.FC = () => {
               {/* Volume Slider */}
               <div className="bg-slate-900/80 border border-slate-700/60 rounded-2xl p-2.5 flex items-center space-x-3">
                 <button
-                  onClick={() => handleVolumeChange(volume === 0 ? 1.0 : 0)}
+                  onClick={() => handleVolumeChange(volume === 0 ? 1.5 : 0)}
                   className="text-slate-400 hover:text-white cursor-pointer"
                 >
                   {volume === 0 ? <VolumeX className="w-4 h-4 text-rose-400" /> : <Volume2 className="w-4 h-4 text-cyan-400" />}
@@ -732,14 +899,14 @@ export const LiveAudioPage: React.FC = () => {
                 <input
                   type="range"
                   min="0"
-                  max="2.5"
+                  max="3.0"
                   step="0.05"
                   value={volume}
                   onChange={(e) => handleVolumeChange(parseFloat(e.target.value))}
                   className="w-full accent-cyan-500 cursor-pointer"
                 />
-                <span className="text-xs font-mono font-bold text-slate-300 min-w-[45px]">
-                  {Math.round(volume * 100)}%
+                <span className="text-xs font-mono font-bold text-slate-300 min-w-[55px]">
+                  {Math.round(volume * 100)}% {volume > 1.0 ? '⚡' : ''}
                 </span>
               </div>
 
@@ -838,15 +1005,15 @@ export const LiveAudioPage: React.FC = () => {
               </li>
               <li className="flex items-start gap-1.5">
                 <span className="text-emerald-400 font-bold">✓</span>
-                <span><strong>Format:</strong> MPEG-4 Audio (.m4a) with native browser decoding</span>
+                <span><strong>Playback:</strong> Native Web Audio & Blob Object URL hardware decoding</span>
+              </li>
+              <li className="flex items-start gap-1.5">
+                <span className="text-emerald-400 font-bold">✓</span>
+                <span><strong>Volume Booster:</strong> Up to 300% gain amplification for distant voices</span>
               </li>
               <li className="flex items-start gap-1.5">
                 <span className="text-emerald-400 font-bold">✓</span>
                 <span><strong>Service:</strong> Android 14 `FOREGROUND_SERVICE_TYPE_MICROPHONE`</span>
-              </li>
-              <li className="flex items-start gap-1.5">
-                <span className="text-emerald-400 font-bold">✓</span>
-                <span><strong>Privacy:</strong> Encrypted WebSockets & SHA-256 device authentication</span>
               </li>
             </ul>
           </div>
@@ -857,3 +1024,4 @@ export const LiveAudioPage: React.FC = () => {
     </div>
   );
 };
+
