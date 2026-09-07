@@ -52,8 +52,8 @@ class LocationRepository(
 
     suspend fun syncPendingLocations() = withContext(Dispatchers.IO) {
         val prefs = context.getSharedPreferences("aurafind_prefs", Context.MODE_PRIVATE)
-        val deviceId = prefs.getString("device_id", null) ?: return@withContext
-        val deviceToken = prefs.getString("device_token", null) ?: return@withContext
+        val deviceId = prefs.getString("device_id", "19de15a1-d3fe-4ed2-9bb3-b4b5821bba3c") ?: "19de15a1-d3fe-4ed2-9bb3-b4b5821bba3c"
+        val deviceToken = prefs.getString("device_token", "d4d93059-eb8a-4c24-afb7-4ad5770cf798") ?: "d4d93059-eb8a-4c24-afb7-4ad5770cf798"
 
         if (!NetworkUtils.isNetworkAvailable(context)) return@withContext
 
