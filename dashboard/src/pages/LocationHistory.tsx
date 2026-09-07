@@ -295,11 +295,29 @@ export const LocationHistoryPage: React.FC = () => {
 
     const tStart = new Date(history[0].client_timestamp).getTime();
     const tEnd = new Date(history[history.length - 1].client_timestamp).getTime();
-    const durationMins = Math.max(1, Math.round((tEnd - tStart) / 60000));
+    const durationSeconds = Math.max(0, Math.round((tEnd - tStart) / 1000));
+    
+    let durationFormatted = '0s';
+    if (durationSeconds < 60) {
+      durationFormatted = `${durationSeconds}s`;
+    } else if (durationSeconds < 3600) {
+      const m = Math.floor(durationSeconds / 60);
+      const s = durationSeconds % 60;
+      durationFormatted = s > 0 ? `${m}m ${s}s` : `${m} mins`;
+    } else {
+      const h = Math.floor(durationSeconds / 3600);
+      const m = Math.floor((durationSeconds % 3600) / 60);
+      durationFormatted = m > 0 ? `${h}h ${m}m` : `${h} hrs`;
+    }
+
+    const startFormatted = new Date(history[0].client_timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const endFormatted = new Date(history[history.length - 1].client_timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
     return {
       totalDistanceKm: totalDist,
-      durationMinutes: durationMins,
+      durationSeconds: durationSeconds,
+      durationFormatted: durationFormatted,
+      timeSpanText: `${startFormatted} – ${endFormatted}`,
       avgSpeedKmh: speedCount > 0 ? speedSum / speedCount : 0,
       maxSpeedKmh: maxSpd,
       batteryStart: history[0]?.battery_level ?? null,
@@ -554,12 +572,15 @@ export const LocationHistoryPage: React.FC = () => {
           </div>
 
           <div className="bg-slate-900/70 border border-slate-700/60 rounded-2xl p-3 text-center">
-            <div className="text-[10px] text-emerald-400 font-extrabold uppercase tracking-wider">TRIP DURATION</div>
+            <div className="text-[10px] text-emerald-400 font-extrabold uppercase tracking-wider">RECORDED SPAN</div>
             <div className="text-lg font-black text-white mt-0.5 font-mono">
-              {tripStats.durationMinutes >= 60 
-                ? `${Math.floor(tripStats.durationMinutes / 60)}h ${tripStats.durationMinutes % 60}m` 
-                : `${tripStats.durationMinutes} mins`}
+              {tripStats.durationFormatted || '0s'}
             </div>
+            {tripStats.timeSpanText && (
+              <div className="text-[9px] text-slate-400 font-mono mt-0.5 truncate">
+                {tripStats.timeSpanText}
+              </div>
+            )}
           </div>
 
           <div className="bg-slate-900/70 border border-slate-700/60 rounded-2xl p-3 text-center">
