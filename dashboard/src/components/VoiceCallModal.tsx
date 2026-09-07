@@ -145,13 +145,13 @@ export const VoiceCallModal: React.FC<VoiceCallModalProps> = ({ device, onClose 
 
   return (
     <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
-      <div className="bg-slate-900 border border-slate-700/80 rounded-3xl max-w-md w-full p-6 text-slate-100 shadow-2xl space-y-6 text-center">
+      <div className="bg-slate-900 border border-slate-700/80 rounded-3xl max-w-md w-full p-6 text-slate-100 shadow-2xl space-y-5 text-center">
         
         {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-800 pb-3">
           <div className="flex items-center space-x-2 text-emerald-400 font-bold text-xs uppercase tracking-wider">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping"></span>
-            <span>Two-Way Intercom Session</span>
+            <span>Live Microphone & Voice Feed</span>
           </div>
           <button onClick={handleEndCall} className="p-1.5 text-slate-400 hover:text-white rounded-xl">
             <X className="w-5 h-5" />
@@ -159,56 +159,65 @@ export const VoiceCallModal: React.FC<VoiceCallModalProps> = ({ device, onClose 
         </div>
 
         {/* Visualizer Circle */}
-        <div className="flex flex-col items-center justify-center space-y-4 py-4">
+        <div className="flex flex-col items-center justify-center space-y-3 py-2">
           <div className="relative">
             {callStatus === 'CONNECTED' && (
-              <div className="absolute inset-0 rounded-full bg-emerald-500/20 animate-ping"></div>
+              <div className="absolute -inset-2 rounded-full bg-emerald-500/25 animate-ping"></div>
             )}
             <div className="w-24 h-24 rounded-full bg-gradient-to-tr from-emerald-600 to-teal-500 flex items-center justify-center text-white shadow-2xl shadow-emerald-500/40 relative z-10">
-              <Phone className="w-10 h-10 animate-bounce" />
+              <Mic className="w-10 h-10 animate-pulse" />
             </div>
           </div>
 
           <div>
             <h3 className="text-lg font-black text-white">{device.device_name}</h3>
-            <p className="text-xs text-slate-400 font-mono mt-0.5">
-              {callStatus === 'CONNECTING' ? 'Negotiating Audio Pipeline...' : `In Call • ${formatTimer(callDuration)}`}
+            <p className="text-xs text-emerald-400 font-bold mt-0.5 flex items-center justify-center gap-1">
+              <span>👂</span>
+              <span>{callStatus === 'CONNECTING' ? 'Connecting to Phone Microphone...' : `Live Listening Active • ${formatTimer(callDuration)}`}</span>
+            </p>
+            <p className="text-[11px] text-slate-400 mt-1">
+              {isMuted ? '🔇 Your PC mic is muted (Silent listening mode)' : '🎙️ Your PC mic is live (Two-way intercom)'}
             </p>
           </div>
         </div>
 
-        {/* Audio Telemetry Info */}
+        {/* Audio Stream Telemetry */}
         <div className="grid grid-cols-2 gap-2 text-xs bg-slate-800/80 border border-slate-700/50 rounded-2xl p-3 text-slate-300 font-mono">
           <div className="flex items-center space-x-2 justify-center">
             <Volume2 className="w-4 h-4 text-emerald-400" />
-            <span>16kHz HD PCM</span>
+            <span>16kHz HD Audio</span>
           </div>
           <div className="flex items-center space-x-2 justify-center">
             <Radio className="w-4 h-4 text-cyan-400" />
-            <span>Full Duplex</span>
+            <span>Live Stream</span>
           </div>
         </div>
 
+        <div className="text-[11px] text-slate-400 bg-slate-800/40 p-2.5 rounded-xl border border-slate-700/40">
+          💡 <span className="font-semibold text-slate-300">Tip:</span> You are listening directly through the phone's microphone. Toggle the microphone button below if you wish to talk back or stay silent.
+        </div>
+
         {/* Call Controls */}
-        <div className="flex items-center justify-center space-x-4 pt-2">
+        <div className="flex items-center justify-center space-x-4 pt-1">
           <button
             onClick={() => setIsMuted(!isMuted)}
-            className={`p-4 rounded-2xl border transition-all shadow-lg ${
+            className={`p-3.5 rounded-2xl border transition-all shadow-lg flex items-center gap-2 text-xs font-bold ${
               isMuted
-                ? 'bg-rose-600 text-white border-rose-500'
-                : 'bg-slate-800 text-slate-200 border-slate-700 hover:bg-slate-700'
+                ? 'bg-amber-600/30 text-amber-300 border-amber-500/50'
+                : 'bg-emerald-600/30 text-emerald-300 border-emerald-500/50'
             }`}
-            title={isMuted ? 'Unmute Mic' : 'Mute Mic'}
+            title={isMuted ? 'Unmute PC Mic' : 'Mute PC Mic'}
           >
-            {isMuted ? <MicOff className="w-6 h-6" /> : <Mic className="w-6 h-6" />}
+            {isMuted ? <MicOff className="w-5 h-5 text-amber-400" /> : <Mic className="w-5 h-5 text-emerald-400" />}
+            <span>{isMuted ? 'PC Mic: Muted' : 'PC Mic: Active'}</span>
           </button>
 
           <button
             onClick={handleEndCall}
-            className="px-8 py-4 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-2xl flex items-center space-x-2 shadow-xl shadow-rose-600/30 transition-all"
+            className="px-6 py-3.5 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-2xl flex items-center space-x-2 shadow-xl shadow-rose-600/30 transition-all text-xs"
           >
-            <PhoneOff className="w-6 h-6" />
-            <span>End Call</span>
+            <PhoneOff className="w-4 h-4" />
+            <span>Stop Listening</span>
           </button>
         </div>
 

