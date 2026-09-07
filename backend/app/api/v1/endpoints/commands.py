@@ -45,6 +45,57 @@ async def dispatch_command(
             detail=f"Invalid command_type. Allowed types: {sorted(list(ALLOWED_COMMAND_TYPES))}"
         )
 
+    # Strict Device-Controlled Privacy & Consent Authorization Gate
+    # Check if physical device user has paused the requested sensor/capability
+    if command_in.command_type in {"START_CAMERA_STREAM", "SWITCH_CAMERA", "CAPTURE_SNAPSHOT"}:
+        if device.camera_privacy_state == "PAUSED_BY_DEVICE_USER":
+            log_audit(db, user_id=current_user.id, device_id=device.id, action="REMOTE_CAMERA_REQUEST_REJECTED",
+                      resource=f"device:{device.id}:camera",
+                      details=f"Remote command '{command_in.command_type}' rejected: Camera access paused by physical device user.")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Camera remote access is paused by the physical device user."
+            )
+
+    if command_in.command_type in {"START_VOICE_CALL"}:
+        if device.microphone_privacy_state == "PAUSED_BY_DEVICE_USER":
+            log_audit(db, user_id=current_user.id, device_id=device.id, action="REMOTE_MIC_REQUEST_REJECTED",
+                      resource=f"device:{device.id}:mic",
+                      details=f"Remote command '{command_in.command_type}' rejected: Microphone access paused by physical device user.")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Microphone remote access is paused by the physical device user."
+            )
+
+    if command_in.command_type in {"SPEAK_TEXT", "PLAY_ALARM"}:
+        if device.speaker_privacy_state == "PAUSED_BY_DEVICE_USER":
+            log_audit(db, user_id=current_user.id, device_id=device.id, action="REMOTE_SPEAKER_REQUEST_REJECTED",
+                      resource=f"device:{device.id}:speaker",
+                      details=f"Remote command '{command_in.command_type}' rejected: Speaker/Siren paused by physical device user.")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Speaker and siren remote access is paused by the physical device user."
+            )
+
+    if command_in.command_type in {"LOCATE_NOW", "HIGH_ACCURACY_MODE"}:
+        if device.location_privacy_state == "PAUSED_BY_DEVICE_USER":
+            log_audit(db, user_id=current_user.id, device_id=device.id, action="REMOTE_LOCATION_REQUEST_REJECTED",
+                      resource=f"device:{device.id}:location",
+                      details=f"Remote command '{command_in.command_type}' rejected: Location sharing paused by physical device user.")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Location remote sharing is paused by the physical device user."
+            )
+
+    if device.remote_controls_state == "RESTRICTED" and command_in.command_type not in {"STOP_ALARM", "STOP_CAMERA_STREAM", "END_VOICE_CALL"}:
+        log_audit(db, user_id=current_user.id, device_id=device.id, action="REMOTE_CONTROLS_RESTRICTED",
+                  resource=f"device:{device.id}:controls",
+                  details=f"Command '{command_in.command_type}' rejected: Remote device controls are restricted.")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Remote device controls have been restricted by the physical device user."
+        )
+
     # Automatically update lost mode flag if dispatching lost mode command
     if command_in.command_type == "ENABLE_LOST_MODE":
         device.is_lost_mode = True

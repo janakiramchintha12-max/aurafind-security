@@ -20,6 +20,7 @@ import com.findmydevice.security.data.repository.LocationRepository
 import com.findmydevice.security.ui.LostModeOverlayActivity
 import com.findmydevice.security.util.AudioAlarmManager
 import com.findmydevice.security.util.NetworkUtils
+import com.findmydevice.security.util.PrivacyManager
 import com.google.android.gms.location.*
 import kotlinx.coroutines.*
 import retrofit2.Retrofit
@@ -144,6 +145,10 @@ class LocationService : Service() {
     private fun setupLocationCallback() {
         locationCallback = object : LocationCallback() {
             override fun onLocationResult(result: LocationResult) {
+                if (PrivacyManager.isLocationPaused(applicationContext)) {
+                    // Location telemetry is paused by device user
+                    return
+                }
                 val loc = result.lastLocation ?: return
                 lastLat = loc.latitude
                 lastLng = loc.longitude
@@ -238,10 +243,17 @@ class LocationService : Service() {
                                     sim_status = simPresent,
                                     sim_number = simNum,
                                     gps_status = NetworkUtils.isGpsEnabled(applicationContext),
-                                    tracking_mode = trackingMode
+                                    tracking_mode = trackingMode,
+                                    camera_privacy_state = PrivacyManager.getCameraState(applicationContext),
+                                    microphone_privacy_state = PrivacyManager.getMicState(applicationContext),
+                                    location_privacy_state = PrivacyManager.getLocationState(applicationContext),
+                                    speaker_privacy_state = PrivacyManager.getSpeakerState(applicationContext),
+                                    remote_controls_state = PrivacyManager.getControlsState(applicationContext)
                                 )
                             )
-                            repository.syncPendingLocations()
+                            if (!PrivacyManager.isLocationPaused(applicationContext)) {
+                                repository.syncPendingLocations()
+                            }
                         } catch (e: Exception) {
                             // Transient retry next tick
                         }
@@ -267,111 +279,151 @@ class LocationService : Service() {
         try {
             when (commandType) {
                 "LOCATE_NOW" -> {
-                    requestLocationUpdates()
-                    resultText = "Fresh GPS fix requested"
+                    if (PrivacyManager.isLocationPaused(applicationContext)) {
+                        status = "REJECTED"
+                        resultText = "REJECTED: Location telemetry is paused by device user"
+                    } else {
+                        requestLocationUpdates()
+                        resultText = "Fresh GPS fix requested"
+                    }
                 }
                 "PLAY_ALARM" -> {
-                    AudioAlarmManager.playAlarm(applicationContext, 60)
-                    resultText = "Alarm tone playing at max volume"
+                    if (PrivacyManager.isSpeakerPaused(applicationContext)) {
+                        status = "REJECTED"
+                        resultText = "REJECTED: Loudspeaker and siren alarm is paused by device user"
+                    } else {
+                        AudioAlarmManager.playAlarm(applicationContext, 60)
+                        resultText = "Alarm tone playing at max volume"
+                    }
                 }
                 "STOP_ALARM" -> {
                     AudioAlarmManager.stopAlarm()
                     resultText = "Alarm tone silenced"
                 }
                 "SPEAK_TEXT" -> {
-                    var message = "Attention. This device is reported lost or stolen. Return to owner."
-                    try {
-                        if (!payload.isNullOrBlank()) {
-                            val json = org.json.JSONObject(payload)
-                            message = json.optString("text", message)
+                    if (PrivacyManager.isSpeakerPaused(applicationContext)) {
+                        status = "REJECTED"
+                        resultText = "REJECTED: Loudspeaker voice output is paused by device user"
+                    } else {
+                        var message = "Attention. This device is reported lost or stolen. Return to owner."
+                        try {
+                            if (!payload.isNullOrBlank()) {
+                                val json = org.json.JSONObject(payload)
+                                message = json.optString("text", message)
+                            }
+                        } catch (e: Exception) {
+                            if (!payload.isNullOrBlank()) message = payload
                         }
-                    } catch (e: Exception) {
-                        if (!payload.isNullOrBlank()) message = payload
+                        com.findmydevice.security.util.TtsManager.speak(applicationContext, message)
+                        resultText = "Voice warning broadcasted: $message"
                     }
-                    com.findmydevice.security.util.TtsManager.speak(applicationContext, message)
-                    resultText = "Voice warning broadcasted: $message"
                 }
                 "START_CAMERA_STREAM" -> {
-                    var facing = "FRONT"
-                    try {
-                        if (!payload.isNullOrBlank()) {
-                            val json = org.json.JSONObject(payload)
-                            facing = json.optString("facing", "FRONT")
+                    if (PrivacyManager.isCameraPaused(applicationContext)) {
+                        status = "REJECTED"
+                        resultText = "REJECTED: Camera streaming is paused by device user"
+                    } else {
+                        var facing = "FRONT"
+                        try {
+                            if (!payload.isNullOrBlank()) {
+                                val json = org.json.JSONObject(payload)
+                                facing = json.optString("facing", "FRONT")
+                            }
+                        } catch (e: Exception) {
+                            if (!payload.isNullOrBlank()) facing = payload
                         }
-                    } catch (e: Exception) {
-                        if (!payload.isNullOrBlank()) facing = payload
+                        com.findmydevice.security.util.CameraStreamManager.startStreaming(applicationContext, activeService, deviceId, deviceToken, facing)
+                        resultText = "Live camera streaming started on $facing camera"
                     }
-                    com.findmydevice.security.util.CameraStreamManager.startStreaming(applicationContext, activeService, deviceId, deviceToken, facing)
-                    resultText = "Live camera streaming started on $facing camera"
                 }
                 "STOP_CAMERA_STREAM" -> {
                     com.findmydevice.security.util.CameraStreamManager.stopStreaming()
                     resultText = "Live camera streaming stopped"
                 }
                 "START_VOICE_CALL" -> {
-                    com.findmydevice.security.util.VoiceCallManager.startCall(applicationContext, activeService, deviceId, deviceToken)
-                    resultText = "Two-way voice communication session active"
+                    if (PrivacyManager.isMicPaused(applicationContext)) {
+                        status = "REJECTED"
+                        resultText = "REJECTED: Microphone and voice intercom is paused by device user"
+                    } else {
+                        com.findmydevice.security.util.VoiceCallManager.startCall(applicationContext, activeService, deviceId, deviceToken)
+                        resultText = "Two-way voice communication session active"
+                    }
                 }
                 "END_VOICE_CALL" -> {
                     com.findmydevice.security.util.VoiceCallManager.stopCall()
                     resultText = "Voice communication ended"
                 }
                 "SWITCH_CAMERA" -> {
-                    var facing = "BACK"
-                    try {
-                        if (!payload.isNullOrBlank()) {
-                            val json = org.json.JSONObject(payload)
-                            facing = json.optString("facing", if (com.findmydevice.security.util.CameraStreamManager.getCurrentFacing() == "FRONT") "BACK" else "FRONT")
+                    if (PrivacyManager.isCameraPaused(applicationContext)) {
+                        status = "REJECTED"
+                        resultText = "REJECTED: Camera is paused by device user"
+                    } else {
+                        var facing = "BACK"
+                        try {
+                            if (!payload.isNullOrBlank()) {
+                                val json = org.json.JSONObject(payload)
+                                facing = json.optString("facing", if (com.findmydevice.security.util.CameraStreamManager.getCurrentFacing() == "FRONT") "BACK" else "FRONT")
+                            }
+                        } catch (e: Exception) {
+                            facing = if (com.findmydevice.security.util.CameraStreamManager.getCurrentFacing() == "FRONT") "BACK" else "FRONT"
                         }
-                    } catch (e: Exception) {
-                        facing = if (com.findmydevice.security.util.CameraStreamManager.getCurrentFacing() == "FRONT") "BACK" else "FRONT"
+                        com.findmydevice.security.util.CameraStreamManager.switchCamera(applicationContext, activeService, deviceId, deviceToken, facing)
+                        resultText = "Switched live camera to $facing camera"
                     }
-                    com.findmydevice.security.util.CameraStreamManager.switchCamera(applicationContext, activeService, deviceId, deviceToken, facing)
-                    resultText = "Switched live camera to $facing camera"
                 }
                 "CAPTURE_SNAPSHOT" -> {
-                    val cameraSelfieBase64 = "data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"400\" height=\"300\"><rect width=\"400\" height=\"300\" fill=\"%230f172a\"/><text x=\"50%\" y=\"40%\" font-size=\"48\" text-anchor=\"middle\" fill=\"%2338bdf8\">📸</text><text x=\"50%\" y=\"65%\" font-size=\"20\" font-weight=\"bold\" text-anchor=\"middle\" fill=\"%2338bdf8\">REMOTE CAMERA SNAPSHOT</text><text x=\"50%\" y=\"80%\" font-size=\"14\" text-anchor=\"middle\" fill=\"%2394a3b8\">Captured via Remote Dashboard Command</text></svg>"
+                    if (PrivacyManager.isCameraPaused(applicationContext)) {
+                        status = "REJECTED"
+                        resultText = "REJECTED: Camera snapshot is paused by device user"
+                    } else {
+                        val cameraSelfieBase64 = "data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"400\" height=\"300\"><rect width=\"400\" height=\"300\" fill=\"%230f172a\"/><text x=\"50%\" y=\"40%\" font-size=\"48\" text-anchor=\"middle\" fill=\"%2338bdf8\">📸</text><text x=\"50%\" y=\"65%\" font-size=\"20\" font-weight=\"bold\" text-anchor=\"middle\" fill=\"%2338bdf8\">REMOTE CAMERA SNAPSHOT</text><text x=\"50%\" y=\"80%\" font-size=\"14\" text-anchor=\"middle\" fill=\"%2394a3b8\">Captured via Remote Dashboard Command</text></svg>"
 
-                    activeService.createSnapshot(
-                        deviceId = deviceId,
-                        deviceToken = deviceToken,
-                        request = SnapshotCreateRequest(
-                            image_data = cameraSelfieBase64,
-                            latitude = lastLat,
-                            longitude = lastLng,
-                            is_intruder_alert = false
+                        activeService.createSnapshot(
+                            deviceId = deviceId,
+                            deviceToken = deviceToken,
+                            request = SnapshotCreateRequest(
+                                image_data = cameraSelfieBase64,
+                                latitude = lastLat,
+                                longitude = lastLng,
+                                is_intruder_alert = false
+                            )
                         )
-                    )
-                    resultText = "Remote camera snapshot captured and uploaded"
+                        resultText = "Remote camera snapshot captured and uploaded"
+                    }
                 }
                 "ENABLE_LOST_MODE" -> {
-                    val lostIntent = Intent(applicationContext, LostModeOverlayActivity::class.java).apply {
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                        putExtra("EMERGENCY_NUMBER", "9014811203")
-                        putExtra("LOST_MSG", "Please call 9014811203 or return this phone to the owner.")
+                    if (PrivacyManager.isControlsRestricted(applicationContext)) {
+                        status = "REJECTED"
+                        resultText = "REJECTED: Remote lock/lost mode is restricted by device user"
+                    } else {
+                        val lostIntent = Intent(applicationContext, LostModeOverlayActivity::class.java).apply {
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                            putExtra("EMERGENCY_NUMBER", "9014811203")
+                            putExtra("LOST_MSG", "Please call 9014811203 or return this phone to the owner.")
+                        }
+
+                        val pendingIntent = PendingIntent.getActivity(
+                            applicationContext,
+                            0,
+                            lostIntent,
+                            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                        )
+
+                        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                        val lostNotification = NotificationCompat.Builder(applicationContext, "aurafind_location_channel")
+                            .setContentTitle("⚠️ DEVICE REPORTED LOST")
+                            .setContentText("Emergency Lost Mode is active. Call 9014811203")
+                            .setSmallIcon(android.R.drawable.ic_menu_compass)
+                            .setPriority(NotificationCompat.PRIORITY_MAX)
+                            .setCategory(NotificationCompat.CATEGORY_ALARM)
+                            .setFullScreenIntent(pendingIntent, true)
+                            .setOngoing(true)
+                            .build()
+
+                        notificationManager.notify(9999, lostNotification)
+                        startActivity(lostIntent)
+                        resultText = "Lost Mode overlay activated displaying Call 9014811203"
                     }
-
-                    val pendingIntent = PendingIntent.getActivity(
-                        applicationContext,
-                        0,
-                        lostIntent,
-                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-                    )
-
-                    val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                    val lostNotification = NotificationCompat.Builder(applicationContext, "aurafind_location_channel")
-                        .setContentTitle("⚠️ DEVICE REPORTED LOST")
-                        .setContentText("Emergency Lost Mode is active. Call 9014811203")
-                        .setSmallIcon(android.R.drawable.ic_menu_compass)
-                        .setPriority(NotificationCompat.PRIORITY_MAX)
-                        .setCategory(NotificationCompat.CATEGORY_ALARM)
-                        .setFullScreenIntent(pendingIntent, true)
-                        .setOngoing(true)
-                        .build()
-
-                    notificationManager.notify(9999, lostNotification)
-                    startActivity(lostIntent)
-                    resultText = "Lost Mode overlay activated displaying Call 9014811203"
                 }
                 "DISABLE_LOST_MODE" -> {
                     val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -384,8 +436,12 @@ class LocationService : Service() {
                     resultText = "High accuracy mode active"
                 }
                 "FORCE_SYNC" -> {
-                    repository.syncPendingLocations()
-                    resultText = "Offline queue synced"
+                    if (!PrivacyManager.isLocationPaused(applicationContext)) {
+                        repository.syncPendingLocations()
+                        resultText = "Offline queue synced"
+                    } else {
+                        resultText = "Sync skipped: Location telemetry is paused"
+                    }
                 }
                 else -> {
                     resultText = "Executed: $commandType"

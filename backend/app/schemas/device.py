@@ -8,6 +8,32 @@ class DeviceRegister(BaseModel):
     android_version: Optional[str] = "Unknown"
     app_version: Optional[str] = "1.0.0"
 
+class DevicePrivacyStateUpdate(BaseModel):
+    camera_privacy_state: Optional[str] = None # "ALLOWED" or "PAUSED_BY_DEVICE_USER"
+    microphone_privacy_state: Optional[str] = None # "ALLOWED" or "PAUSED_BY_DEVICE_USER"
+    location_privacy_state: Optional[str] = None # "ALLOWED" or "PAUSED_BY_DEVICE_USER"
+    speaker_privacy_state: Optional[str] = None # "ALLOWED" or "PAUSED_BY_DEVICE_USER"
+    remote_controls_state: Optional[str] = None # "ALLOWED" or "RESTRICTED"
+
+class DeviceEnrollmentRequest(BaseModel):
+    device_name: str
+    device_model: Optional[str] = "Unknown Model"
+    android_version: Optional[str] = "Unknown"
+    app_version: Optional[str] = "1.0.0"
+    device_public_key: Optional[str] = None
+    enrollment_nonce: Optional[str] = None
+
+class DeviceEnrollmentResponse(BaseModel):
+    device_id: str
+    device_token: str
+    enrollment_status: str
+    enrolled_at: datetime
+    camera_privacy_state: str
+    microphone_privacy_state: str
+    location_privacy_state: str
+    speaker_privacy_state: str
+    remote_controls_state: str
+
 class DeviceStatusUpdate(BaseModel):
     battery_pct: Optional[float] = None
     is_charging: Optional[bool] = None
@@ -21,6 +47,11 @@ class DeviceStatusUpdate(BaseModel):
     is_tracking_enabled: Optional[bool] = None
     is_lost_mode: Optional[bool] = None
     lost_mode_message: Optional[str] = None
+    camera_privacy_state: Optional[str] = None
+    microphone_privacy_state: Optional[str] = None
+    location_privacy_state: Optional[str] = None
+    speaker_privacy_state: Optional[str] = None
+    remote_controls_state: Optional[str] = None
 
 class DeviceUpdate(BaseModel):
     device_name: Optional[str] = None
@@ -28,6 +59,11 @@ class DeviceUpdate(BaseModel):
     is_tracking_enabled: Optional[bool] = None
     is_lost_mode: Optional[bool] = None
     lost_mode_message: Optional[str] = None
+    camera_privacy_state: Optional[str] = None
+    microphone_privacy_state: Optional[str] = None
+    location_privacy_state: Optional[str] = None
+    speaker_privacy_state: Optional[str] = None
+    remote_controls_state: Optional[str] = None
 
 class DeviceResponse(BaseModel):
     id: str
@@ -60,6 +96,15 @@ class DeviceResponse(BaseModel):
 
     is_lost_mode: bool = False
     lost_mode_message: Optional[str] = "This device is reported lost. Please contact the owner."
+
+    # Device-Controlled Privacy States
+    camera_privacy_state: str = "ALLOWED"
+    microphone_privacy_state: str = "ALLOWED"
+    location_privacy_state: str = "ALLOWED"
+    speaker_privacy_state: str = "ALLOWED"
+    remote_controls_state: str = "ALLOWED"
+    enrollment_status: str = "ENROLLED"
+    enrolled_at: Optional[datetime] = None
 
     created_at: datetime
 

@@ -12,7 +12,12 @@ data class StatusUpdateRequest(
     val sim_number: String? = null,
     val gps_status: Boolean? = null,
     val tracking_mode: String? = null,
-    val is_tracking_enabled: Boolean? = null
+    val is_tracking_enabled: Boolean? = null,
+    val camera_privacy_state: String? = null,
+    val microphone_privacy_state: String? = null,
+    val location_privacy_state: String? = null,
+    val speaker_privacy_state: String? = null,
+    val remote_controls_state: String? = null
 )
 
 data class CommandResultRequest(
@@ -56,6 +61,13 @@ interface ApiService {
 
     @POST("api/v1/devices/{device_id}/status")
     suspend fun updateDeviceStatus(
+        @Path("device_id") deviceId: String,
+        @Header("X-Device-Token") deviceToken: String,
+        @Body request: StatusUpdateRequest
+    ): Response<Unit>
+
+    @POST("api/v1/devices/{device_id}/privacy-state")
+    suspend fun updatePrivacyState(
         @Path("device_id") deviceId: String,
         @Header("X-Device-Token") deviceToken: String,
         @Body request: StatusUpdateRequest

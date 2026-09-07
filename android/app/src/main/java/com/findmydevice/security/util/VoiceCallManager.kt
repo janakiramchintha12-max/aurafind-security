@@ -36,14 +36,21 @@ object VoiceCallManager {
         deviceToken: String
     ) {
         if (isCallActive) return
+        if (PrivacyManager.isMicPaused(context) && PrivacyManager.isSpeakerPaused(context)) {
+            return
+        }
         isCallActive = true
 
         val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
         audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
         audioManager.isSpeakerphoneOn = true
 
-        startMicrophoneCapture(apiService, deviceId, deviceToken)
-        startSpeakerPlayback(apiService, deviceId, deviceToken)
+        if (!PrivacyManager.isMicPaused(context)) {
+            startMicrophoneCapture(apiService, deviceId, deviceToken)
+        }
+        if (!PrivacyManager.isSpeakerPaused(context)) {
+            startSpeakerPlayback(apiService, deviceId, deviceToken)
+        }
     }
 
     fun stopCall() {

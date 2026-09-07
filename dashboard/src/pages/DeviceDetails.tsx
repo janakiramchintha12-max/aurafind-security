@@ -52,8 +52,9 @@ export const DeviceDetailsPage: React.FC = () => {
     try {
       await commandsApi.dispatch(id, type as any, payload);
       fetchDetails();
-    } catch (e) {
-      alert('Failed to dispatch command');
+    } catch (e: any) {
+      const msg = e?.response?.data?.detail || 'Failed to dispatch command';
+      alert(`Command Rejected: ${msg}`);
     }
   };
 
@@ -89,6 +90,17 @@ export const DeviceDetailsPage: React.FC = () => {
       navigate('/');
     } catch (e) {
       alert('Failed to remove device');
+    }
+  };
+
+  const handleRevoke = async () => {
+    if (!id || !confirm('Are you sure you want to revoke this device enrollment? Revoking prevents all remote commands and marks the device as untrusted.')) return;
+    try {
+      await devicesApi.revoke(id);
+      fetchDetails();
+      alert('Device enrollment revoked successfully.');
+    } catch (e: any) {
+      alert('Failed to revoke device enrollment');
     }
   };
 
@@ -189,6 +201,73 @@ export const DeviceDetailsPage: React.FC = () => {
             </div>
           </div>
         )}
+
+        {/* Device Privacy & Consent Architecture Card */}
+        <div className="bg-slate-900/90 border border-cyan-500/30 rounded-2xl p-5 space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-700/60 pb-3">
+            <div className="flex items-center space-x-2">
+              <ShieldCheck className="w-5 h-5 text-cyan-400" />
+              <div>
+                <h3 className="text-sm font-bold text-white">Device-Controlled Privacy & Consent Center</h3>
+                <p className="text-[11px] text-slate-400">The device user physically holds non-overrideable authority over sensitive sensors.</p>
+              </div>
+            </div>
+            <div className="flex items-center space-x-2">
+              <span className={`text-xs px-2.5 py-1 rounded-full font-bold ${
+                device.enrollment_status === 'REVOKED'
+                  ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                  : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+              }`}>
+                Enrollment: {device.enrollment_status || 'ENROLLED'}
+              </span>
+              {device.enrollment_status !== 'REVOKED' && (
+                <button
+                  onClick={handleRevoke}
+                  className="text-xs px-2.5 py-1 bg-rose-600/30 hover:bg-rose-600/50 text-rose-300 border border-rose-500/40 rounded-lg font-semibold transition-all"
+                >
+                  Revoke Device
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 pt-1">
+            <div className="p-3 bg-slate-800/80 rounded-xl border border-slate-700/60">
+              <div className="text-[10px] text-slate-400 font-bold uppercase">Camera Sensor</div>
+              <div className={`text-xs font-bold mt-1 ${device.camera_privacy_state === 'PAUSED_BY_DEVICE_USER' ? 'text-rose-400' : 'text-emerald-400'}`}>
+                {device.camera_privacy_state === 'PAUSED_BY_DEVICE_USER' ? '🔴 PAUSED BY USER' : '🟢 ALLOWED'}
+              </div>
+            </div>
+
+            <div className="p-3 bg-slate-800/80 rounded-xl border border-slate-700/60">
+              <div className="text-[10px] text-slate-400 font-bold uppercase">Microphone Sensor</div>
+              <div className={`text-xs font-bold mt-1 ${device.microphone_privacy_state === 'PAUSED_BY_DEVICE_USER' ? 'text-rose-400' : 'text-emerald-400'}`}>
+                {device.microphone_privacy_state === 'PAUSED_BY_DEVICE_USER' ? '🔴 PAUSED BY USER' : '🟢 ALLOWED'}
+              </div>
+            </div>
+
+            <div className="p-3 bg-slate-800/80 rounded-xl border border-slate-700/60">
+              <div className="text-[10px] text-slate-400 font-bold uppercase">GPS Satellite Telemetry</div>
+              <div className={`text-xs font-bold mt-1 ${device.location_privacy_state === 'PAUSED_BY_DEVICE_USER' ? 'text-rose-400' : 'text-emerald-400'}`}>
+                {device.location_privacy_state === 'PAUSED_BY_DEVICE_USER' ? '🔴 PAUSED BY USER' : '🟢 ALLOWED'}
+              </div>
+            </div>
+
+            <div className="p-3 bg-slate-800/80 rounded-xl border border-slate-700/60">
+              <div className="text-[10px] text-slate-400 font-bold uppercase">Loudspeaker & Siren</div>
+              <div className={`text-xs font-bold mt-1 ${device.speaker_privacy_state === 'PAUSED_BY_DEVICE_USER' ? 'text-rose-400' : 'text-emerald-400'}`}>
+                {device.speaker_privacy_state === 'PAUSED_BY_DEVICE_USER' ? '🔴 PAUSED BY USER' : '🟢 ALLOWED'}
+              </div>
+            </div>
+
+            <div className="p-3 bg-slate-800/80 rounded-xl border border-slate-700/60">
+              <div className="text-[10px] text-slate-400 font-bold uppercase">Remote Lockdown Controls</div>
+              <div className={`text-xs font-bold mt-1 ${device.remote_controls_state === 'RESTRICTED' ? 'text-rose-400' : 'text-emerald-400'}`}>
+                {device.remote_controls_state === 'RESTRICTED' ? '🔴 RESTRICTED' : '🟢 ALLOWED'}
+              </div>
+            </div>
+          </div>
+        </div>
 
         {/* Remote Command Center */}
         <div className="space-y-4">

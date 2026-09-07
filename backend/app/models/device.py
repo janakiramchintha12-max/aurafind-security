@@ -42,6 +42,18 @@ class Device(Base):
     is_lost_mode = Column(Boolean, nullable=False, default=False)
     lost_mode_message = Column(String, nullable=True, default="This device is reported lost. Please contact the owner.")
 
+    # Device-Controlled Privacy & Consent States (Authoritative & Non-Overrideable)
+    camera_privacy_state = Column(String, nullable=False, default="ALLOWED") # "ALLOWED" or "PAUSED_BY_DEVICE_USER"
+    microphone_privacy_state = Column(String, nullable=False, default="ALLOWED") # "ALLOWED" or "PAUSED_BY_DEVICE_USER"
+    location_privacy_state = Column(String, nullable=False, default="ALLOWED") # "ALLOWED" or "PAUSED_BY_DEVICE_USER"
+    speaker_privacy_state = Column(String, nullable=False, default="ALLOWED") # "ALLOWED" or "PAUSED_BY_DEVICE_USER"
+    remote_controls_state = Column(String, nullable=False, default="ALLOWED") # "ALLOWED" or "RESTRICTED"
+
+    # Enrollment & Identity Lifecycle
+    enrollment_status = Column(String, nullable=False, default="ENROLLED") # "ENROLLED", "PENDING", "REVOKED"
+    device_public_key = Column(Text, nullable=True)
+    enrolled_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 

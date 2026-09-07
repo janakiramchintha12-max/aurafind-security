@@ -42,6 +42,10 @@ object CameraStreamManager {
     fun getCurrentFacing(): String = currentFacing
 
     fun startStreaming(context: Context, apiService: ApiService, deviceId: String, deviceToken: String, facing: String = "FRONT") {
+        if (PrivacyManager.isCameraPaused(context)) {
+            stopStreaming()
+            return
+        }
         currentFacing = facing.uppercase()
         isStreaming = true
         isUploading.set(false)
@@ -50,6 +54,10 @@ object CameraStreamManager {
     }
 
     fun switchCamera(context: Context, apiService: ApiService, deviceId: String, deviceToken: String, facing: String) {
+        if (PrivacyManager.isCameraPaused(context)) {
+            stopStreaming()
+            return
+        }
         currentFacing = facing.uppercase()
         stopCameraCapture()
         if (isStreaming) {
@@ -66,6 +74,10 @@ object CameraStreamManager {
     }
 
     private fun openCameraAndStream(context: Context, apiService: ApiService, deviceId: String, deviceToken: String) {
+        if (PrivacyManager.isCameraPaused(context)) {
+            stopStreaming()
+            return
+        }
         try {
             val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
             val targetFacing = if (currentFacing == "BACK") CameraCharacteristics.LENS_FACING_BACK else CameraCharacteristics.LENS_FACING_FRONT

@@ -6,11 +6,12 @@ A production-grade, multi-device personal mobile security and Find My Device pla
 
 ## 🌟 Key Capabilities
 
-- 📱 **Multi-Device Account Platform**: Manage up to 4+ Android devices (Main Phone, Backup Phone, Tablet, Spare Phone) under one account with device credential isolation.
+- 🛡️ **Device-Controlled Privacy & Consent Center**: Handset user retains authoritative, non-overrideable control over Camera, Microphone, GPS Telemetry, Loudspeaker, and Remote Lock. Covert access is strictly blocked (`403 Forbidden`) with immutable audit trails.
+- 📱 **Multi-Device Account Platform**: Manage up to 4+ Android devices under one account with device credential isolation.
 - 📡 **Offline Location Engine & Airplane Mode Queueing**: Stores location fixes locally in Room Database when disconnected or in Airplane Mode, auto-synchronizing in chronological batches when connectivity returns.
-- 🚨 **Remote Command Center**: Dispatch authenticated commands (`LOCATE_NOW`, `PLAY_ALARM`, `DISPLAY_MESSAGE`, `HIGH_ACCURACY_MODE`, `FORCE_SYNC`) with real-time feedback.
-- 🗺️ **Interactive Web Dashboard**: React + TypeScript + Leaflet map view with route history polylines, date range filters (Today, Yesterday, 7d, 30d, Custom), and geofence circular safe zone configuration.
-- 🔒 **Security Auditing & Privacy**: JWT authentication with refresh token rotation, bcrypt password hashing, IDOR ownership verification, and detailed security access logs.
+- 🚨 **Remote Tactical Command Center**: Dispatch authenticated commands (`LOCATE_NOW`, `PLAY_ALARM`, `START_CAMERA_STREAM`, `START_VOICE_CALL`, `CAPTURE_SNAPSHOT`, `ENABLE_LOST_MODE`, `SPEAK_TEXT`) with real-time feedback.
+- 🗺️ **Interactive Web Dashboard**: React + TypeScript + Leaflet map view with route history polylines, date range filters, live camera streaming, two-way VoIP intercom, and forensic police dossier generator.
+- 🔒 **Security Auditing & Privacy**: JWT authentication, bcrypt hashing, IDOR ownership verification, and cryptographic append-only audit log stream.
 
 ---
 
@@ -20,17 +21,20 @@ A production-grade, multi-device personal mobile security and Find My Device pla
 c:\Users\janak\Desktop\theft.in\
 ├── backend/                  # Python FastAPI Backend API & Pytest Suite
 │   ├── app/                  # API endpoints, DB models, schemas, services
-│   ├── tests/                # Test suite for Auth, Devices, Locations & Commands
+│   ├── tests/                # Test suite for Auth, Devices, Locations, Commands & Privacy
 │   ├── Dockerfile
 │   └── requirements.txt
 ├── dashboard/                # React 18 + TypeScript + Tailwind Web Dashboard
-│   ├── src/                  # Components, Pages, Services, Map UI
+│   ├── src/                  # Components, Pages, Services, Modals, Map UI
 │   ├── Dockerfile
 │   └── package.json
 ├── android/                  # Android Kotlin App (Jetpack Compose + Room + WorkManager)
-│   ├── app/src/main/         # LocationService, Room DAOs, Network Repository
+│   ├── app/src/main/         # PrivacyManager, SecurityPrivacyScreen, LocationService
 │   └── build.gradle.kts
 ├── docs/                     # Documentation & Verification
+│   ├── PRIVACY_ARCHITECTURE.md # Device-Controlled Privacy & Consent Architecture
+│   ├── SECURITY.md           # Security Safeguards & Policies
+│   ├── THREAT_MODEL.md       # Threat Model & Adversarial Analysis
 │   ├── INSTALLATION.md       # Setup & Execution Guide
 │   ├── ARCHITECTURE.md       # System Architecture & Technical Specifications
 │   └── VERIFICATION.md       # Feature & 20-Scenario Failure Test Matrix
@@ -47,8 +51,8 @@ c:\Users\janak\Desktop\theft.in\
 ```bash
 cd backend
 pip install -r requirements.txt
-python -m pytest tests/
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+pytest tests/
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 ### 2. Run Dashboard (React)
@@ -65,6 +69,9 @@ Open `http://localhost:5173` in your browser.
 
 ## 📄 Documentation
 
+- [Device-Controlled Privacy & Consent Architecture](docs/PRIVACY_ARCHITECTURE.md)
+- [Security Safeguards & Policy](docs/SECURITY.md)
+- [Threat Model & Adversarial Analysis](docs/THREAT_MODEL.md)
 - [Installation & Setup Guide](docs/INSTALLATION.md)
 - [System Architecture](docs/ARCHITECTURE.md)
 - [Verification Report & Failure Scenarios Matrix](docs/VERIFICATION.md)

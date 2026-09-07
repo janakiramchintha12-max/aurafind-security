@@ -32,10 +32,17 @@ export interface Device {
   status: 'ONLINE' | 'OFFLINE' | 'UNREACHABLE';
   permission_status?: string;
   tracking_mode: 'NORMAL' | 'HIGH_ACCURACY' | 'BATTERY_SAVER' | 'OFFLINE';
-  is_tracking_enabled: boolean;
-
   is_lost_mode?: boolean;
   lost_mode_message?: string;
+
+  camera_privacy_state?: 'ALLOWED' | 'PAUSED_BY_DEVICE_USER' | string;
+  microphone_privacy_state?: 'ALLOWED' | 'PAUSED_BY_DEVICE_USER' | string;
+  location_privacy_state?: 'ALLOWED' | 'PAUSED_BY_DEVICE_USER' | string;
+  speaker_privacy_state?: 'ALLOWED' | 'PAUSED_BY_DEVICE_USER' | string;
+  remote_controls_state?: 'ALLOWED' | 'RESTRICTED' | string;
+  enrollment_status?: 'ENROLLED' | 'PENDING' | 'REVOKED' | string;
+  device_public_key?: string;
+  enrolled_at?: string;
 
   created_at: string;
 }

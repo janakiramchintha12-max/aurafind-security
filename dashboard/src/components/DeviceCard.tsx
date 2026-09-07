@@ -121,7 +121,7 @@ export const DeviceCard: React.FC<DeviceCardProps> = ({ device, onLocate, onRing
       </div>
 
       {/* Location info */}
-      <div className="text-xs text-slate-400 space-y-1 mb-4">
+      <div className="text-xs text-slate-400 space-y-1 mb-3">
         <div className="flex items-center justify-between">
           <span className="flex items-center gap-1 text-slate-300">
             <MapPin className="w-3.5 h-3.5 text-cyan-400" />
@@ -136,6 +136,45 @@ export const DeviceCard: React.FC<DeviceCardProps> = ({ device, onLocate, onRing
         <div className="flex items-center justify-between">
           <span>Last Sync:</span>
           <span>{device.last_sync_time ? new Date(device.last_sync_time).toLocaleTimeString() : 'Never'}</span>
+        </div>
+      </div>
+
+      {/* Privacy & Consent Status Strip */}
+      <div className="my-3 px-3 py-2 bg-slate-900/90 border border-slate-700/80 rounded-xl space-y-1.5">
+        <div className="flex items-center justify-between text-[11px] font-bold tracking-wide text-slate-300">
+          <span className="flex items-center gap-1">
+            <Shield className="w-3.5 h-3.5 text-cyan-400" />
+            <span>DEVICE CONSENT & PRIVACY</span>
+          </span>
+          <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
+            device.enrollment_status === 'REVOKED'
+              ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+              : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+          }`}>
+            {device.enrollment_status || 'ENROLLED'}
+          </span>
+        </div>
+        <div className="grid grid-cols-5 gap-1 pt-1 text-[10px] text-center font-bold font-mono">
+          <div className={`p-1 rounded border ${device.camera_privacy_state === 'PAUSED_BY_DEVICE_USER' ? 'bg-rose-950/60 border-rose-800/80 text-rose-400' : 'bg-slate-800/80 border-slate-700/60 text-emerald-400'}`} title={device.camera_privacy_state === 'PAUSED_BY_DEVICE_USER' ? 'Camera is paused by device user' : 'Camera is allowed'}>
+            <div>📷 CAM</div>
+            <div className="text-[9px]">{device.camera_privacy_state === 'PAUSED_BY_DEVICE_USER' ? 'PAUSED' : 'ACTIVE'}</div>
+          </div>
+          <div className={`p-1 rounded border ${device.microphone_privacy_state === 'PAUSED_BY_DEVICE_USER' ? 'bg-rose-950/60 border-rose-800/80 text-rose-400' : 'bg-slate-800/80 border-slate-700/60 text-emerald-400'}`} title={device.microphone_privacy_state === 'PAUSED_BY_DEVICE_USER' ? 'Microphone is paused by device user' : 'Microphone is allowed'}>
+            <div>🎙️ MIC</div>
+            <div className="text-[9px]">{device.microphone_privacy_state === 'PAUSED_BY_DEVICE_USER' ? 'PAUSED' : 'ACTIVE'}</div>
+          </div>
+          <div className={`p-1 rounded border ${device.location_privacy_state === 'PAUSED_BY_DEVICE_USER' ? 'bg-rose-950/60 border-rose-800/80 text-rose-400' : 'bg-slate-800/80 border-slate-700/60 text-emerald-400'}`} title={device.location_privacy_state === 'PAUSED_BY_DEVICE_USER' ? 'Location telemetry is paused by device user' : 'Location is allowed'}>
+            <div>📍 GPS</div>
+            <div className="text-[9px]">{device.location_privacy_state === 'PAUSED_BY_DEVICE_USER' ? 'PAUSED' : 'ACTIVE'}</div>
+          </div>
+          <div className={`p-1 rounded border ${device.speaker_privacy_state === 'PAUSED_BY_DEVICE_USER' ? 'bg-rose-950/60 border-rose-800/80 text-rose-400' : 'bg-slate-800/80 border-slate-700/60 text-emerald-400'}`} title={device.speaker_privacy_state === 'PAUSED_BY_DEVICE_USER' ? 'Loudspeaker is paused by device user' : 'Speaker is allowed'}>
+            <div>🔊 SPK</div>
+            <div className="text-[9px]">{device.speaker_privacy_state === 'PAUSED_BY_DEVICE_USER' ? 'PAUSED' : 'ACTIVE'}</div>
+          </div>
+          <div className={`p-1 rounded border ${device.remote_controls_state === 'RESTRICTED' ? 'bg-rose-950/60 border-rose-800/80 text-rose-400' : 'bg-slate-800/80 border-slate-700/60 text-emerald-400'}`} title={device.remote_controls_state === 'RESTRICTED' ? 'Remote controls are restricted by device user' : 'Controls allowed'}>
+            <div>🔒 CTRL</div>
+            <div className="text-[9px]">{device.remote_controls_state === 'RESTRICTED' ? 'LOCKED' : 'ACTIVE'}</div>
+          </div>
         </div>
       </div>
 

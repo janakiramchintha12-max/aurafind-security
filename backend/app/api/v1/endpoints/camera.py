@@ -29,6 +29,13 @@ async def push_camera_frame(
     if not device:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid device credentials")
 
+    if device.camera_privacy_state == "PAUSED_BY_DEVICE_USER":
+        latest_device_frames.pop(device_id, None)
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Camera access is paused by device user. Frame rejected."
+        )
+
     latest_device_frames[device_id] = {
         "image_data": payload.image_data,
         "facing": payload.facing,
@@ -52,7 +59,10 @@ async def push_camera_frame(
 def get_latest_camera_frame(
     device: Device = Depends(verify_device_ownership)
 ):
+    if device.camera_privacy_state == "PAUSED_BY_DEVICE_USER":
+        return {"has_frame": False, "image_data": None, "facing": "FRONT", "privacy_state": "PAUSED_BY_DEVICE_USER"}
+
     frame = latest_device_frames.get(device.id)
     if not frame:
-        return {"has_frame": False, "image_data": None, "facing": "FRONT"}
-    return {"has_frame": True, **frame}
+        return {"has_frame": False, "image_data": None, "facing": "FRONT", "privacy_state": device.camera_privacy_state}
+    return {"has_frame": True, **frame, "privacy_state": device.camera_privacy_state}

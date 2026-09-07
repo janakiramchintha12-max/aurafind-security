@@ -71,6 +71,10 @@ export const devicesApi = {
   delete: async (id: string): Promise<void> => {
     await api.delete(`/devices/${id}`);
   },
+  revoke: async (id: string): Promise<any> => {
+    const res = await api.post(`/devices/${id}/revoke`);
+    return res.data;
+  },
 };
 
 export const locationsApi = {

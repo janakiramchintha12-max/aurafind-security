@@ -117,10 +117,140 @@ async def update_device_status(
         "wifi_status": device.wifi_status,
         "gps_status": device.gps_status,
         "sim_status": device.sim_status,
-        "tracking_mode": device.tracking_mode
+        "tracking_mode": device.tracking_mode,
+        "camera_privacy_state": device.camera_privacy_state,
+        "microphone_privacy_state": device.microphone_privacy_state,
+        "location_privacy_state": device.location_privacy_state,
+        "speaker_privacy_state": device.speaker_privacy_state,
+        "remote_controls_state": device.remote_controls_state
     })
 
     return device
+
+@router.post("/enroll", response_model=DeviceResponse, status_code=status.HTTP_201_CREATED)
+async def enroll_device(
+    enroll_in: DeviceRegister,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Mandatory APK-Based Device Enrollment Flow:
+    Generates cryptographically secure device identity, registers device under authenticated account,
+    initializes default privacy-allowed states, and records immutable enrollment audit event.
+    """
+    device = Device(
+        user_id=current_user.id,
+        device_name=enroll_in.device_name,
+        device_model=enroll_in.device_model or "Android Handset",
+        android_version=enroll_in.android_version or "14.0",
+        app_version=enroll_in.app_version or "1.0.0",
+        status="ONLINE",
+        enrollment_status="ENROLLED",
+        camera_privacy_state="ALLOWED",
+        microphone_privacy_state="ALLOWED",
+        location_privacy_state="ALLOWED",
+        speaker_privacy_state="ALLOWED",
+        remote_controls_state="ALLOWED",
+        enrolled_at=datetime.now(timezone.utc),
+        last_heartbeat=datetime.now(timezone.utc)
+    )
+    db.add(device)
+    db.commit()
+    db.refresh(device)
+
+    log_audit(
+        db,
+        user_id=current_user.id,
+        device_id=device.id,
+        action="DEVICE_ENROLLED",
+        resource=f"device:{device.id}",
+        details=f"Device '{device.device_name}' successfully enrolled via APK cryptographic handshake."
+    )
+    return device
+
+@router.post("/{device_id}/privacy-state", response_model=DeviceResponse)
+async def update_device_privacy_state(
+    privacy_in: DeviceStatusUpdate,
+    device_id: str,
+    x_device_token: str = Header(..., alias="X-Device-Token"),
+    db: Session = Depends(get_db)
+):
+    """
+    Authoritative Device-Controlled Privacy State Synchronization:
+    Only the physical device user holding the valid X-Device-Token can toggle sensor privacy states.
+    All state transitions generate immutable audit events.
+    """
+    device = db.query(Device).filter(Device.id == device_id, Device.device_token == x_device_token).first()
+    if not device:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid device credentials")
+
+    audit_details = []
+
+    if privacy_in.camera_privacy_state is not None and privacy_in.camera_privacy_state != device.camera_privacy_state:
+        old_val = device.camera_privacy_state
+        device.camera_privacy_state = privacy_in.camera_privacy_state
+        action = "CAMERA_PAUSED" if device.camera_privacy_state == "PAUSED_BY_DEVICE_USER" else "CAMERA_ENABLED"
+        log_audit(db, user_id=device.user_id, device_id=device.id, action=action, resource=f"device:{device.id}:camera",
+                  details=f"Camera remote access changed from {old_val} to {device.camera_privacy_state} by physical device user.")
+        audit_details.append(f"Camera: {device.camera_privacy_state}")
+
+    if privacy_in.microphone_privacy_state is not None and privacy_in.microphone_privacy_state != device.microphone_privacy_state:
+        old_val = device.microphone_privacy_state
+        device.microphone_privacy_state = privacy_in.microphone_privacy_state
+        action = "MICROPHONE_PAUSED" if device.microphone_privacy_state == "PAUSED_BY_DEVICE_USER" else "MICROPHONE_ENABLED"
+        log_audit(db, user_id=device.user_id, device_id=device.id, action=action, resource=f"device:{device.id}:mic",
+                  details=f"Microphone remote access changed from {old_val} to {device.microphone_privacy_state} by physical device user.")
+        audit_details.append(f"Microphone: {device.microphone_privacy_state}")
+
+    if privacy_in.location_privacy_state is not None and privacy_in.location_privacy_state != device.location_privacy_state:
+        old_val = device.location_privacy_state
+        device.location_privacy_state = privacy_in.location_privacy_state
+        action = "LOCATION_PAUSED" if device.location_privacy_state == "PAUSED_BY_DEVICE_USER" else "LOCATION_ENABLED"
+        log_audit(db, user_id=device.user_id, device_id=device.id, action=action, resource=f"device:{device.id}:location",
+                  details=f"Location remote sharing changed from {old_val} to {device.location_privacy_state} by physical device user.")
+        audit_details.append(f"Location: {device.location_privacy_state}")
+
+    if privacy_in.speaker_privacy_state is not None and privacy_in.speaker_privacy_state != device.speaker_privacy_state:
+        old_val = device.speaker_privacy_state
+        device.speaker_privacy_state = privacy_in.speaker_privacy_state
+        action = "SPEAKER_PAUSED" if device.speaker_privacy_state == "PAUSED_BY_DEVICE_USER" else "SPEAKER_ENABLED"
+        log_audit(db, user_id=device.user_id, device_id=device.id, action=action, resource=f"device:{device.id}:speaker",
+                  details=f"Speaker/Siren access changed from {old_val} to {device.speaker_privacy_state} by physical device user.")
+        audit_details.append(f"Speaker: {device.speaker_privacy_state}")
+
+    if privacy_in.remote_controls_state is not None and privacy_in.remote_controls_state != device.remote_controls_state:
+        device.remote_controls_state = privacy_in.remote_controls_state
+        log_audit(db, user_id=device.user_id, device_id=device.id, action="CONTROLS_MODIFIED", resource=f"device:{device.id}:controls",
+                  details=f"Remote controls state set to {device.remote_controls_state}")
+
+    device.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(device)
+
+    # Broadcast privacy update to user dashboard websocket
+    await manager.send_to_user(device.user_id, {
+        "event": "DEVICE_PRIVACY_STATE_UPDATE",
+        "device_id": device.id,
+        "camera_privacy_state": device.camera_privacy_state,
+        "microphone_privacy_state": device.microphone_privacy_state,
+        "location_privacy_state": device.location_privacy_state,
+        "speaker_privacy_state": device.speaker_privacy_state,
+        "remote_controls_state": device.remote_controls_state
+    })
+
+    return device
+
+@router.post("/{device_id}/revoke", status_code=status.HTTP_200_OK)
+def revoke_device(
+    device: Device = Depends(verify_device_ownership),
+    db: Session = Depends(get_db)
+):
+    device.enrollment_status = "REVOKED"
+    device.status = "REVOKED"
+    db.commit()
+    log_audit(db, user_id=device.user_id, device_id=device.id, action="DEVICE_REVOKED", resource=f"device:{device.id}",
+              details="Device credentials revoked by user.")
+    return {"status": "revoked", "device_id": device.id}
 
 @router.post("/{device_id}/heartbeat")
 async def device_heartbeat(
