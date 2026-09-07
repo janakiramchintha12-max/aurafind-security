@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Circle, Polyline, Tooltip, useMap } from 'react-leaflet';
 import L from 'leaflet';
-import { Smartphone, RefreshCw, Navigation, Compass, Radio, Laptop, ArrowRightLeft, Crosshair, Satellite, ShieldCheck } from 'lucide-react';
+import { Smartphone, RefreshCw, Navigation, Compass, Radio, Laptop, ArrowRightLeft, Crosshair, Satellite, ShieldCheck, MapPin } from 'lucide-react';
 import { devicesApi, commandsApi, connectWebSocket } from '../services/api';
 import { Device } from '../types';
 
@@ -84,14 +84,14 @@ export const LiveLocationPage: React.FC = () => {
   const [devices, setDevices] = useState<Device[]>([]);
   const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number; accuracy?: number } | null>(null);
-  const [rangeMode, setRangeMode] = useState<'laptop_phone' | 'device_device'>('laptop_phone');
+  const [rangeMode, setRangeMode] = useState<'device_only' | 'laptop_phone' | 'device_device'>('device_only');
   const [mapTheme, setMapTheme] = useState<'satellite' | 'dark' | 'street'>('satellite');
   const [loading, setLoading] = useState(true);
   const [recenterTrigger, setRecenterTrigger] = useState(0);
 
-  // 1. Authentic Browser Geolocation (No artificial offsets)
+  // 1. Browser Geolocation (only active when laptop range mode is explicitly enabled)
   useEffect(() => {
-    if (typeof window !== 'undefined' && 'geolocation' in navigator) {
+    if (rangeMode === 'laptop_phone' && typeof window !== 'undefined' && 'geolocation' in navigator) {
       const watchId = navigator.geolocation.watchPosition(
         (pos) => {
           setUserLocation({
@@ -107,7 +107,7 @@ export const LiveLocationPage: React.FC = () => {
       );
       return () => navigator.geolocation.clearWatch(watchId);
     }
-  }, []);
+  }, [rangeMode]);
 
   const fetchDevices = async () => {
     try {
@@ -141,7 +141,7 @@ export const LiveLocationPage: React.FC = () => {
   // Determine Comparison Endpoints (Point A and Point B)
   let originLat: number | null = null;
   let originLng: number | null = null;
-  let originLabel = 'YOUR LAPTOP';
+  let originLabel = 'YOUR PC';
 
   let targetLat: number | null = null;
   let targetLng: number | null = null;
@@ -151,14 +151,14 @@ export const LiveLocationPage: React.FC = () => {
     if (userLocation) {
       originLat = userLocation.lat;
       originLng = userLocation.lng;
-      originLabel = 'YOUR LAPTOP';
+      originLabel = 'YOUR PC (Wi-Fi/IP)';
     }
     if (selectedDevice?.last_latitude && selectedDevice?.last_longitude) {
       targetLat = selectedDevice.last_latitude;
       targetLng = selectedDevice.last_longitude;
       targetLabel = selectedDevice.device_name;
     }
-  } else {
+  } else if (rangeMode === 'device_device') {
     // Inter-device mode: compare Device 1 and Device 2
     if (mappedDevices.length >= 2) {
       originLat = mappedDevices[0].last_latitude!;
@@ -168,6 +168,13 @@ export const LiveLocationPage: React.FC = () => {
       targetLat = mappedDevices[1].last_latitude!;
       targetLng = mappedDevices[1].last_longitude!;
       targetLabel = mappedDevices[1].device_name;
+    }
+  } else {
+    // Single Device Mode: Pure Satellite Focus on Target Phone
+    if (selectedDevice?.last_latitude && selectedDevice?.last_longitude) {
+      targetLat = selectedDevice.last_latitude;
+      targetLng = selectedDevice.last_longitude;
+      targetLabel = selectedDevice.device_name;
     }
   }
 
@@ -210,8 +217,6 @@ export const LiveLocationPage: React.FC = () => {
 
   const mapCenter: [number, number] = targetLat && targetLng
     ? [targetLat, targetLng]
-    : userLocation
-    ? [userLocation.lat, userLocation.lng]
     : [14.0417, 79.2624];
 
   return (
@@ -222,10 +227,10 @@ export const LiveLocationPage: React.FC = () => {
         <div>
           <h1 className="text-2xl font-black text-white tracking-wide flex items-center space-x-2">
             <Satellite className="w-6 h-6 text-cyan-400 animate-pulse" />
-            <span>Exact Hardware Satellite GPS Radar</span>
+            <span>Target Device Satellite Radar</span>
           </h1>
           <p className="text-sm text-slate-400">
-            Authentic live device coordinates directly from Android GNSS satellite receiver
+            Real-time GNSS satellite tracking directly from your phone's hardware receiver
           </p>
         </div>
 
@@ -238,19 +243,29 @@ export const LiveLocationPage: React.FC = () => {
             title="Recenter Map on Target Device"
           >
             <Crosshair className="w-3.5 h-3.5 text-cyan-400" />
-            <span>Center on Device</span>
+            <span>Center on Phone</span>
           </button>
 
-          {/* Range Mode Switcher */}
+          {/* Mode Switcher */}
           <div className="bg-slate-800 border border-slate-700 rounded-xl p-1 flex items-center space-x-1 text-xs">
+            <button
+              onClick={() => setRangeMode('device_only')}
+              className={`px-2.5 py-1.5 rounded-lg font-bold transition-all flex items-center gap-1 ${
+                rangeMode === 'device_only' ? 'bg-cyan-600 text-white shadow-md' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Smartphone className="w-3 h-3" />
+              <span>Target Phone Only</span>
+            </button>
             <button
               onClick={() => setRangeMode('laptop_phone')}
               className={`px-2.5 py-1.5 rounded-lg font-bold transition-all flex items-center gap-1 ${
                 rangeMode === 'laptop_phone' ? 'bg-cyan-600 text-white shadow-md' : 'text-slate-400 hover:text-white'
               }`}
+              title="Show distance from this PC (uses Wi-Fi/IP estimate)"
             >
               <Laptop className="w-3 h-3" />
-              <span>Laptop ↔ Phone</span>
+              <span>PC ↔ Phone</span>
             </button>
             {mappedDevices.length >= 2 && (
               <button
@@ -303,104 +318,166 @@ export const LiveLocationPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Cockpit HUD & Real-Time Proximity Rangefinder */}
-      <div className="bg-slate-800/95 border border-cyan-500/40 rounded-2xl p-4 shadow-2xl backdrop-blur grid grid-cols-2 md:grid-cols-5 gap-3 items-center">
-        
-        {/* Origin Endpoint */}
-        <div className="bg-slate-900/70 p-2.5 rounded-xl border border-slate-700/60 text-center">
-          <div className="text-[10px] text-cyan-400 font-extrabold uppercase tracking-wider flex items-center justify-center gap-1">
-            <Laptop className="w-3 h-3 text-cyan-400" />
-            <span>FROM: {originLabel}</span>
+      {/* Cockpit HUD */}
+      {rangeMode === 'device_only' ? (
+        /* Single Device Pure Satellite HUD */
+        <div className="bg-slate-800/95 border border-cyan-500/40 rounded-2xl p-4 shadow-2xl backdrop-blur grid grid-cols-2 md:grid-cols-5 gap-3 items-center">
+          <div className="bg-slate-900/70 p-2.5 rounded-xl border border-slate-700/60 text-center">
+            <div className="text-[10px] text-cyan-400 font-extrabold uppercase tracking-wider flex items-center justify-center gap-1">
+              <Smartphone className="w-3 h-3 text-cyan-400" />
+              <span>ACTIVE TARGET</span>
+            </div>
+            <div className="text-sm font-bold text-white mt-0.5 truncate">
+              {selectedDevice?.device_name || 'Target Phone'}
+            </div>
+            <div className="text-[10px] text-slate-400">
+              SIM: {selectedDevice?.sim_number || '+919392408017'}
+            </div>
           </div>
-          {originLat != null && originLng != null ? (
-            <>
-              <div className="text-xs font-bold text-cyan-300 font-mono mt-1">
-                📍 {originLat.toFixed(6)}, {originLng.toFixed(6)}
-              </div>
-              <div className="text-[10px] text-emerald-400 font-medium mt-0.5">
-                {userLocation?.accuracy ? `±${userLocation.accuracy.toFixed(0)}m accuracy` : 'Live Geolocation'}
-              </div>
-            </>
-          ) : (
-            <div className="text-xs text-slate-400 mt-1">Acquiring position...</div>
-          )}
-        </div>
 
-        {/* Target Endpoint */}
-        <div className="bg-slate-900/70 p-2.5 rounded-xl border border-slate-700/60 text-center">
-          <div className="text-[10px] text-rose-400 font-extrabold uppercase tracking-wider flex items-center justify-center gap-1">
-            <Smartphone className="w-3 h-3 text-rose-400" />
-            <span>TO: {targetLabel}</span>
-          </div>
-          {targetLat != null && targetLng != null ? (
-            <>
-              <div className="text-xs font-bold text-rose-300 font-mono mt-1">
-                📍 {targetLat.toFixed(6)}, {targetLng.toFixed(6)}
-              </div>
-              <div className="text-[10px] text-emerald-400 font-medium mt-0.5">
-                ±{selectedDevice?.last_accuracy?.toFixed(1) || '3.0'}m Satellite Precision
-              </div>
-            </>
-          ) : (
-            <div className="text-xs text-slate-400 mt-1">Signal Syncing...</div>
-          )}
-        </div>
-
-        {/* EXACT LIVE DISTANCE BOX */}
-        <div className="bg-slate-900/90 p-2.5 rounded-xl border-2 border-cyan-500/60 text-center shadow-lg shadow-cyan-500/10">
-          <div className="text-[10px] text-cyan-300 font-extrabold uppercase tracking-wider">EXACT LIVE DISTANCE</div>
-          <div className={`text-2xl font-black tracking-tight ${
-            distanceMeters != null
-              ? distanceMeters <= 10
-                ? 'text-emerald-400 animate-pulse'
-                : distanceMeters <= 50
-                ? 'text-cyan-400'
-                : 'text-amber-400'
-              : 'text-slate-400'
-          }`}>
-            {formatDistance(distanceMeters)}
-          </div>
-          <div className="text-[10px] font-bold text-slate-300">
-            {distanceMeters != null ? (distanceMeters <= 10 ? '🚨 Immediate Proximity' : '📡 Exact Satellite Delta') : 'Live Synced'}
-          </div>
-        </div>
-
-        {/* Direction Compass */}
-        <div className="bg-slate-900/70 p-2.5 rounded-xl border border-slate-700/60 text-center">
-          <div className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider flex items-center justify-center space-x-1">
-            <Compass className="w-3 h-3 text-cyan-400" />
-            <span>BEARING DIRECTION</span>
-          </div>
-          <div className="text-sm font-extrabold text-cyan-300 flex items-center justify-center space-x-1.5 mt-0.5">
-            {bearingDegrees != null && distanceMeters != null && distanceMeters > 5 && (
-              <div
-                className="w-5 h-5 rounded-full border border-cyan-400 flex items-center justify-center text-[10px] transition-transform duration-500"
-                style={{ transform: `rotate(${bearingDegrees}deg)` }}
-              >
-                ⬆️
-              </div>
+          <div className="bg-slate-900/70 p-2.5 rounded-xl border border-slate-700/60 text-center">
+            <div className="text-[10px] text-rose-400 font-extrabold uppercase tracking-wider flex items-center justify-center gap-1">
+              <MapPin className="w-3 h-3 text-rose-400" />
+              <span>EXACT COORDINATES</span>
+            </div>
+            {targetLat != null && targetLng != null ? (
+              <>
+                <div className="text-xs font-bold text-rose-300 font-mono mt-1">
+                  📍 {targetLat.toFixed(6)}, {targetLng.toFixed(6)}
+                </div>
+                <div className="text-[10px] text-slate-400">WGS84 Satellite Fix</div>
+              </>
+            ) : (
+              <div className="text-xs text-slate-400 mt-1">Acquiring GPS fix...</div>
             )}
-            <span>{directionText}</span>
           </div>
-          <div className="text-[10px] text-slate-400 font-mono">
-            {bearingDegrees != null ? `Heading: ${bearingDegrees}° Bearing` : 'Direct Range'}
+
+          <div className="bg-slate-900/90 p-2.5 rounded-xl border-2 border-emerald-500/60 text-center shadow-lg shadow-emerald-500/10">
+            <div className="text-[10px] text-emerald-400 font-extrabold uppercase tracking-wider flex items-center justify-center gap-1">
+              <Satellite className="w-3 h-3 text-emerald-400" />
+              <span>SATELLITE ACCURACY</span>
+            </div>
+            <div className="text-xl font-black text-emerald-400 mt-0.5">
+              ±{selectedDevice?.last_accuracy?.toFixed(1) || '3.0'}m
+            </div>
+            <div className="text-[10px] text-emerald-300 font-bold">High Precision GNSS</div>
+          </div>
+
+          <div className="bg-slate-900/70 p-2.5 rounded-xl border border-slate-700/60 text-center">
+            <div className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider">BATTERY & HEALTH</div>
+            <div className="text-sm font-black text-cyan-300 mt-0.5">
+              🔋 {selectedDevice?.battery_pct || 75}%
+            </div>
+            <div className="text-[10px] text-emerald-400 font-bold">
+              {selectedDevice?.status === 'ONLINE' ? '🟢 Online & Guarded' : '🔴 Offline'}
+            </div>
+          </div>
+
+          <div className="col-span-2 md:col-span-1 flex flex-col gap-1.5">
+            <a
+              href={googleMapsUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="py-2.5 px-3 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white border border-cyan-400 font-bold rounded-xl text-xs flex items-center justify-center space-x-1.5 transition-all shadow-lg shadow-cyan-600/20"
+            >
+              <Navigation className="w-3.5 h-3.5" />
+              <span>Directions to Phone</span>
+            </a>
           </div>
         </div>
+      ) : (
+        /* Multi-Endpoint Proximity Rangefinder HUD */
+        <div className="bg-slate-800/95 border border-cyan-500/40 rounded-2xl p-4 shadow-2xl backdrop-blur grid grid-cols-2 md:grid-cols-5 gap-3 items-center">
+          <div className="bg-slate-900/70 p-2.5 rounded-xl border border-slate-700/60 text-center">
+            <div className="text-[10px] text-cyan-400 font-extrabold uppercase tracking-wider flex items-center justify-center gap-1">
+              <Laptop className="w-3 h-3 text-cyan-400" />
+              <span>FROM: {originLabel}</span>
+            </div>
+            {originLat != null && originLng != null ? (
+              <>
+                <div className="text-xs font-bold text-cyan-300 font-mono mt-1">
+                  📍 {originLat.toFixed(6)}, {originLng.toFixed(6)}
+                </div>
+                <div className="text-[10px] text-slate-400 font-medium mt-0.5">
+                  {userLocation?.accuracy ? `±${userLocation.accuracy.toFixed(0)}m (Wi-Fi/IP)` : 'Wi-Fi/IP estimate'}
+                </div>
+              </>
+            ) : (
+              <div className="text-xs text-slate-400 mt-1">Acquiring position...</div>
+            )}
+          </div>
 
-        {/* Actions & Navigation */}
-        <div className="col-span-2 md:col-span-1 flex flex-col gap-1.5">
-          <a
-            href={googleMapsUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="py-2 px-3 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white border border-cyan-400 font-bold rounded-xl text-xs flex items-center justify-center space-x-1.5 transition-all shadow-lg shadow-cyan-600/20"
-          >
-            <Navigation className="w-3.5 h-3.5" />
-            <span>Live Directions</span>
-          </a>
+          <div className="bg-slate-900/70 p-2.5 rounded-xl border border-slate-700/60 text-center">
+            <div className="text-[10px] text-rose-400 font-extrabold uppercase tracking-wider flex items-center justify-center gap-1">
+              <Smartphone className="w-3 h-3 text-rose-400" />
+              <span>TO: {targetLabel}</span>
+            </div>
+            {targetLat != null && targetLng != null ? (
+              <>
+                <div className="text-xs font-bold text-rose-300 font-mono mt-1">
+                  📍 {targetLat.toFixed(6)}, {targetLng.toFixed(6)}
+                </div>
+                <div className="text-[10px] text-emerald-400 font-medium mt-0.5">
+                  ±{selectedDevice?.last_accuracy?.toFixed(1) || '3.0'}m Satellite Precision
+                </div>
+              </>
+            ) : (
+              <div className="text-xs text-slate-400 mt-1">Signal Syncing...</div>
+            )}
+          </div>
+
+          <div className="bg-slate-900/90 p-2.5 rounded-xl border-2 border-cyan-500/60 text-center shadow-lg shadow-cyan-500/10">
+            <div className="text-[10px] text-cyan-300 font-extrabold uppercase tracking-wider">EXACT LIVE DISTANCE</div>
+            <div className={`text-2xl font-black tracking-tight ${
+              distanceMeters != null
+                ? distanceMeters <= 10
+                  ? 'text-emerald-400 animate-pulse'
+                  : distanceMeters <= 50
+                  ? 'text-cyan-400'
+                  : 'text-amber-400'
+                : 'text-slate-400'
+            }`}>
+              {formatDistance(distanceMeters)}
+            </div>
+            <div className="text-[10px] font-bold text-slate-300">
+              {distanceMeters != null ? (distanceMeters <= 10 ? '🚨 Immediate Proximity' : '📡 Relative Distance Delta') : 'Live Synced'}
+            </div>
+          </div>
+
+          <div className="bg-slate-900/70 p-2.5 rounded-xl border border-slate-700/60 text-center">
+            <div className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider flex items-center justify-center space-x-1">
+              <Compass className="w-3 h-3 text-cyan-400" />
+              <span>BEARING DIRECTION</span>
+            </div>
+            <div className="text-sm font-extrabold text-cyan-300 flex items-center justify-center space-x-1.5 mt-0.5">
+              {bearingDegrees != null && distanceMeters != null && distanceMeters > 5 && (
+                <div
+                  className="w-5 h-5 rounded-full border border-cyan-400 flex items-center justify-center text-[10px] transition-transform duration-500"
+                  style={{ transform: `rotate(${bearingDegrees}deg)` }}
+                >
+                  ⬆️
+                </div>
+              )}
+              <span>{directionText}</span>
+            </div>
+            <div className="text-[10px] text-slate-400 font-mono">
+              {bearingDegrees != null ? `Heading: ${bearingDegrees}° Bearing` : 'Direct Range'}
+            </div>
+          </div>
+
+          <div className="col-span-2 md:col-span-1 flex flex-col gap-1.5">
+            <a
+              href={googleMapsUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="py-2.5 px-3 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white border border-cyan-400 font-bold rounded-xl text-xs flex items-center justify-center space-x-1.5 transition-all shadow-lg shadow-cyan-600/20"
+            >
+              <Navigation className="w-3.5 h-3.5" />
+              <span>Live Directions</span>
+            </a>
+          </div>
         </div>
-
-      </div>
+      )}
 
       {/* Main Map & Device List Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 h-[650px]">
@@ -469,7 +546,7 @@ export const LiveLocationPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Leaflet Map: Renders exact hardware markers */}
+        {/* Leaflet Map */}
         <div className="lg:col-span-3 bg-slate-900 border border-slate-700/60 rounded-2xl overflow-hidden shadow-2xl relative">
           <MapContainer center={mapCenter} zoom={18} style={{ width: '100%', height: '100%' }}>
             <TileLayer
@@ -482,21 +559,19 @@ export const LiveLocationPage: React.FC = () => {
             {/* Auto Recenter Controller */}
             <MapRecenterController center={mapCenter} trigger={recenterTrigger} />
 
-            {/* Marker 1: USER / LAPTOP LOCATION (Exact Non-Draggable Cyan Marker) */}
-            {userLocation && (
+            {/* Marker 1: USER / LAPTOP LOCATION (Only shown if rangeMode === 'laptop_phone') */}
+            {rangeMode === 'laptop_phone' && userLocation && (
               <>
                 <Marker position={[userLocation.lat, userLocation.lng]} icon={userLocationIcon}>
                   <Popup>
                     <div className="p-1 space-y-1 text-slate-900 font-sans">
-                      <div className="font-bold text-sm text-cyan-700">💻 Your Browser Location</div>
+                      <div className="font-bold text-sm text-cyan-700">💻 Your PC Browser Location</div>
                       <div className="text-xs font-mono">📍 {userLocation.lat.toFixed(6)}, {userLocation.lng.toFixed(6)}</div>
-                      {userLocation.accuracy && (
-                        <div className="text-[10px] text-slate-500">Accuracy: ±{userLocation.accuracy.toFixed(0)}m</div>
-                      )}
+                      <div className="text-[10px] text-slate-500">Wi-Fi / IP Estimated position</div>
                     </div>
                   </Popup>
                   <Tooltip permanent direction="top" offset={[0, -20]} className="bg-slate-900 text-cyan-300 font-bold text-[10px] border border-cyan-500 rounded px-1 py-0.5">
-                    💻 Your Location
+                    💻 Your PC (Wi-Fi/IP)
                   </Tooltip>
                 </Marker>
                 {userLocation.accuracy && userLocation.accuracy > 0 && (
@@ -509,8 +584,8 @@ export const LiveLocationPage: React.FC = () => {
               </>
             )}
 
-            {/* Connecting Rangefinder Line */}
-            {originLat != null && originLng != null && targetLat != null && targetLng != null && (
+            {/* Connecting Rangefinder Line (Only in multi-endpoint modes) */}
+            {rangeMode !== 'device_only' && originLat != null && originLng != null && targetLat != null && targetLng != null && (
               <Polyline
                 positions={[
                   [originLat, originLng],
@@ -560,6 +635,7 @@ export const LiveLocationPage: React.FC = () => {
             ))}
           </MapContainer>
         </div>
+
 
       </div>
     </div>
