@@ -332,6 +332,7 @@ class LocationService : Service() {
                         } catch (e: Exception) {
                             if (!payload.isNullOrBlank()) facing = payload
                         }
+                        startForegroundServiceNotification()
                         com.findmydevice.security.util.CameraStreamManager.startStreaming(applicationContext, activeService, deviceId, deviceToken, facing)
                         resultText = "Live camera streaming started on $facing camera"
                     }
@@ -367,6 +368,7 @@ class LocationService : Service() {
                         } catch (e: Exception) {
                             facing = if (com.findmydevice.security.util.CameraStreamManager.getCurrentFacing() == "FRONT") "BACK" else "FRONT"
                         }
+                        startForegroundServiceNotification()
                         com.findmydevice.security.util.CameraStreamManager.switchCamera(applicationContext, activeService, deviceId, deviceToken, facing)
                         resultText = "Switched live camera to $facing camera"
                     }
@@ -376,19 +378,26 @@ class LocationService : Service() {
                         status = "REJECTED"
                         resultText = "REJECTED: Camera snapshot is paused by device user"
                     } else {
-                        val cameraSelfieBase64 = "data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"400\" height=\"300\"><rect width=\"400\" height=\"300\" fill=\"%230f172a\"/><text x=\"50%\" y=\"40%\" font-size=\"48\" text-anchor=\"middle\" fill=\"%2338bdf8\">📸</text><text x=\"50%\" y=\"65%\" font-size=\"20\" font-weight=\"bold\" text-anchor=\"middle\" fill=\"%2338bdf8\">REMOTE CAMERA SNAPSHOT</text><text x=\"50%\" y=\"80%\" font-size=\"14\" text-anchor=\"middle\" fill=\"%2394a3b8\">Captured via Remote Dashboard Command</text></svg>"
-
-                        activeService.createSnapshot(
-                            deviceId = deviceId,
-                            deviceToken = deviceToken,
-                            request = SnapshotCreateRequest(
-                                image_data = cameraSelfieBase64,
-                                latitude = lastLat,
-                                longitude = lastLng,
-                                is_intruder_alert = false
-                            )
+                        var facing = "FRONT"
+                        try {
+                            if (!payload.isNullOrBlank()) {
+                                val json = org.json.JSONObject(payload)
+                                facing = json.optString("facing", "FRONT")
+                            }
+                        } catch (e: Exception) {
+                            if (!payload.isNullOrBlank()) facing = payload
+                        }
+                        startForegroundServiceNotification()
+                        com.findmydevice.security.util.CameraStreamManager.captureSnapshot(
+                            applicationContext,
+                            activeService,
+                            deviceId,
+                            deviceToken,
+                            facing,
+                            lastLat,
+                            lastLng
                         )
-                        resultText = "Remote camera snapshot captured and uploaded"
+                        resultText = "Remote hardware camera snapshot triggered on $facing camera"
                     }
                 }
                 "ENABLE_LOST_MODE" -> {

@@ -1,5 +1,6 @@
 package com.findmydevice.security.util
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.ImageFormat
 import android.hardware.camera2.*
@@ -7,24 +8,31 @@ import android.media.ImageReader
 import android.os.Handler
 import android.os.HandlerThread
 import android.util.Base64
+import android.util.Log
 import android.util.Size
 import com.findmydevice.security.data.network.ApiService
 import com.findmydevice.security.data.network.CameraFrameRequest
+import com.findmydevice.security.data.network.SnapshotCreateRequest
 import kotlinx.coroutines.*
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * Ultra-Fast Lag-Free Camera Stream Engine
- * - Zero CPU re-encoding overhead (Zero-Copy direct JPEG stream)
- * - Strict Mutex Dropper: Prevents cellular packet backlog and 10-20s buffering lag
- * - Hardware Auto-Focus & Auto-Exposure
+ * Ultra-Reliable High-Performance Camera Stream & Snapshot Engine
+ * - Dynamic resolution matching from hardware characteristics
+ * - Continuous high-FPS stream for dashboard live monitor
+ * - Instant hardware snapshot capture for audit snapshots
+ * - Zero-leak buffer recycling
  */
 object CameraStreamManager {
+
+    private const val TAG = "CameraStreamManager"
 
     private var isStreaming = false
     private var currentFacing = "FRONT" // "FRONT" or "BACK"
     private var isTorchOn = false
-    private var streamJob: Job? = null
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     private var cameraDevice: CameraDevice? = null
@@ -33,16 +41,16 @@ object CameraStreamManager {
     private var backgroundThread: HandlerThread? = null
     private var backgroundHandler: Handler? = null
 
-    // Ultra-Fast High-Speed Pipeline: allows up to 30-60 FPS frame dispatch
     private val isUploading = AtomicBoolean(false)
     private var lastFrameTime = 0L
-    private const val MIN_FRAME_INTERVAL_MS = 30L // Up to 30-35 FPS raw hardware transmission
+    private const val MIN_FRAME_INTERVAL_MS = 40L // Up to 25 FPS stream
 
     fun isStreamActive(): Boolean = isStreaming
     fun getCurrentFacing(): String = currentFacing
 
     fun startStreaming(context: Context, apiService: ApiService, deviceId: String, deviceToken: String, facing: String = "FRONT") {
         if (PrivacyManager.isCameraPaused(context)) {
+            Log.w(TAG, "Camera remote access is paused by device user")
             stopStreaming()
             return
         }
@@ -70,9 +78,164 @@ object CameraStreamManager {
         isUploading.set(false)
         stopCameraCapture()
         stopBackgroundThread()
-        streamJob?.cancel()
     }
 
+    @SuppressLint("MissingPermission")
+    fun captureSnapshot(
+        context: Context,
+        apiService: ApiService,
+        deviceId: String,
+        deviceToken: String,
+        facing: String = "FRONT",
+        lat: Double? = null,
+        lng: Double? = null
+    ) {
+        if (PrivacyManager.isCameraPaused(context)) {
+            Log.w(TAG, "Cannot capture snapshot: camera paused by device user")
+            return
+        }
+
+        scope.launch {
+            try {
+                startBackgroundThread()
+                val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
+                val targetFacing = if (facing.uppercase() == "BACK") CameraCharacteristics.LENS_FACING_BACK else CameraCharacteristics.LENS_FACING_FRONT
+
+                var targetCameraId: String? = null
+                var cameraCharacteristics: CameraCharacteristics? = null
+
+                for (id in cameraManager.cameraIdList) {
+                    val characteristics = cameraManager.getCameraCharacteristics(id)
+                    val lensFacing = characteristics.get(CameraCharacteristics.LENS_FACING)
+                    if (lensFacing == targetFacing) {
+                        targetCameraId = id
+                        cameraCharacteristics = characteristics
+                        break
+                    }
+                }
+
+                if (targetCameraId == null && cameraManager.cameraIdList.isNotEmpty()) {
+                    targetCameraId = cameraManager.cameraIdList[0]
+                    cameraCharacteristics = cameraManager.getCameraCharacteristics(targetCameraId)
+                }
+
+                if (targetCameraId == null) return@launch
+
+                val map = cameraCharacteristics?.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
+                val sizes = map?.getOutputSizes(ImageFormat.JPEG) ?: emptyArray()
+                val chosenSize = findBestMatchingSize(sizes, 640, 480)
+
+                val snapReader = ImageReader.newInstance(chosenSize.width, chosenSize.height, ImageFormat.JPEG, 2)
+
+                var snapCamera: CameraDevice? = null
+                var snapSession: CameraCaptureSession? = null
+
+                snapReader.setOnImageAvailableListener({ reader ->
+                    val image = reader.acquireLatestImage() ?: return@setOnImageAvailableListener
+                    try {
+                        val planes = image.planes
+                        if (planes.isNotEmpty()) {
+                            val buffer = planes[0].buffer
+                            val bytes = ByteArray(buffer.remaining())
+                            buffer.get(bytes)
+
+                            if (bytes.isNotEmpty()) {
+                                val base64 = "data:image/jpeg;base64," + Base64.encodeToString(bytes, Base64.NO_WRAP)
+                                val timeIso = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).format(Date())
+
+                                scope.launch {
+                                    try {
+                                        // Save as permanent snapshot record
+                                        apiService.createSnapshot(
+                                            deviceId = deviceId,
+                                            deviceToken = deviceToken,
+                                            request = SnapshotCreateRequest(
+                                                image_data = base64,
+                                                latitude = lat,
+                                                longitude = lng,
+                                                is_intruder_alert = false
+                                            )
+                                        )
+                                        // Also push as live frame for instant display
+                                        apiService.pushCameraFrame(
+                                            deviceId = deviceId,
+                                            deviceToken = deviceToken,
+                                            request = CameraFrameRequest(
+                                                image_data = base64,
+                                                facing = facing.uppercase(),
+                                                fps = 1.0f,
+                                                timestamp = timeIso
+                                            )
+                                        )
+                                    } catch (e: Exception) {
+                                        Log.e(TAG, "Failed uploading snapshot: ${e.message}")
+                                    }
+                                }
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error processing snapshot image: ${e.message}")
+                    } finally {
+                        image.close()
+                        if (!isStreaming) {
+                            try {
+                                snapSession?.close()
+                                snapCamera?.close()
+                                snapReader.close()
+                            } catch (e: Exception) {
+                                // ignore
+                            }
+                        }
+                    }
+                }, backgroundHandler)
+
+                cameraManager.openCamera(targetCameraId, object : CameraDevice.StateCallback() {
+                    override fun onOpened(camera: CameraDevice) {
+                        snapCamera = camera
+                        try {
+                            camera.createCaptureSession(listOf(snapReader.surface), object : CameraCaptureSession.StateCallback() {
+                                override fun onConfigured(session: CameraCaptureSession) {
+                                    snapSession = session
+                                    try {
+                                        val req = camera.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE).apply {
+                                            addTarget(snapReader.surface)
+                                            set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO)
+                                            set(CaptureRequest.JPEG_QUALITY, 80.toByte())
+                                        }
+                                        session.capture(req.build(), null, backgroundHandler)
+                                    } catch (e: Exception) {
+                                        Log.e(TAG, "Error triggering single capture: ${e.message}")
+                                    }
+                                }
+
+                                override fun onConfigureFailed(session: CameraCaptureSession) {
+                                    Log.e(TAG, "Snapshot capture session config failed")
+                                    snapCamera?.close()
+                                }
+                            }, backgroundHandler)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error creating snapshot capture session: ${e.message}")
+                            snapCamera?.close()
+                        }
+                    }
+
+                    override fun onDisconnected(camera: CameraDevice) {
+                        camera.close()
+                    }
+
+                    override fun onError(camera: CameraDevice, error: Int) {
+                        Log.e(TAG, "Snapshot camera open error: $error")
+                        camera.close()
+                    }
+                }, backgroundHandler)
+
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to capture hardware snapshot: ${e.message}")
+            }
+        }
+    }
+
+    @SuppressLint("MissingPermission")
     private fun openCameraAndStream(context: Context, apiService: ApiService, deviceId: String, deviceToken: String) {
         if (PrivacyManager.isCameraPaused(context)) {
             stopStreaming()
@@ -101,21 +264,22 @@ object CameraStreamManager {
             }
 
             if (targetCameraId == null) {
+                Log.e(TAG, "No suitable camera ID found")
                 return
             }
 
-            // Pick high-speed 640x480 resolution for lightning-fast network transmission
             val map = cameraCharacteristics?.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
-            val sizes = map?.getOutputSizes(ImageFormat.JPEG)
-            val chosenSize = sizes?.filter { it.width <= 640 && it.height <= 480 }
-                ?.maxByOrNull { it.width * it.height } ?: Size(640, 480)
+            val sizes = map?.getOutputSizes(ImageFormat.JPEG) ?: emptyArray()
+            val chosenSize = findBestMatchingSize(sizes, 640, 480)
 
-            imageReader = ImageReader.newInstance(chosenSize.width, chosenSize.height, ImageFormat.JPEG, 2)
+            Log.i(TAG, "Configuring stream camera $targetCameraId at resolution ${chosenSize.width}x${chosenSize.height}")
+
+            imageReader = ImageReader.newInstance(chosenSize.width, chosenSize.height, ImageFormat.JPEG, 4)
             imageReader?.setOnImageAvailableListener({ reader ->
                 val image = reader.acquireLatestImage() ?: return@setOnImageAvailableListener
                 try {
                     val now = System.currentTimeMillis()
-                    if (now - lastFrameTime < 60L || !isUploading.compareAndSet(false, true)) {
+                    if (now - lastFrameTime < MIN_FRAME_INTERVAL_MS || !isUploading.compareAndSet(false, true)) {
                         return@setOnImageAvailableListener
                     }
 
@@ -131,6 +295,7 @@ object CameraStreamManager {
                             scope.launch {
                                 try {
                                     val base64 = "data:image/jpeg;base64," + Base64.encodeToString(bytes, Base64.NO_WRAP)
+                                    val timeIso = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).format(Date())
 
                                     apiService.pushCameraFrame(
                                         deviceId = deviceId,
@@ -139,11 +304,11 @@ object CameraStreamManager {
                                             image_data = base64,
                                             facing = currentFacing,
                                             fps = 20.0f,
-                                            timestamp = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", java.util.Locale.US).format(java.util.Date())
+                                            timestamp = timeIso
                                         )
                                     )
                                 } catch (e: Exception) {
-                                    e.printStackTrace()
+                                    Log.e(TAG, "Error pushing live camera frame: ${e.message}")
                                 } finally {
                                     isUploading.set(false)
                                 }
@@ -163,23 +328,26 @@ object CameraStreamManager {
 
             cameraManager.openCamera(targetCameraId, object : CameraDevice.StateCallback() {
                 override fun onOpened(camera: CameraDevice) {
+                    Log.i(TAG, "Camera opened successfully: ${camera.id}")
                     cameraDevice = camera
                     createCaptureSession(apiService, deviceId, deviceToken, cameraCharacteristics)
                 }
 
                 override fun onDisconnected(camera: CameraDevice) {
+                    Log.w(TAG, "Camera disconnected: ${camera.id}")
                     camera.close()
                     cameraDevice = null
                 }
 
                 override fun onError(camera: CameraDevice, error: Int) {
+                    Log.e(TAG, "Camera open error code: $error")
                     camera.close()
                     cameraDevice = null
                 }
             }, backgroundHandler)
 
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.e(TAG, "Exception opening camera: ${e.message}")
         }
     }
 
@@ -209,25 +377,44 @@ object CameraStreamManager {
                                 set(CaptureRequest.CONTROL_AE_MODE, CameraMetadata.CONTROL_AE_MODE_ON)
                             }
 
-                            set(CaptureRequest.JPEG_QUALITY, 70.toByte())
+                            set(CaptureRequest.JPEG_QUALITY, 65.toByte())
 
                             if (isTorchOn && currentFacing == "BACK") {
                                 set(CaptureRequest.FLASH_MODE, CameraMetadata.FLASH_MODE_TORCH)
                             }
                         }
                         session.setRepeatingRequest(requestBuilder.build(), null, backgroundHandler)
+                        Log.i(TAG, "Capture session configured and repeating request started")
                     } catch (e: Exception) {
-                        e.printStackTrace()
+                        Log.e(TAG, "Error configuring repeating request: ${e.message}")
                     }
                 }
 
                 override fun onConfigureFailed(session: CameraCaptureSession) {
+                    Log.e(TAG, "Capture session onConfigureFailed")
                     captureSession = null
                 }
             }, backgroundHandler)
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.e(TAG, "Error creating capture session: ${e.message}")
         }
+    }
+
+    private fun findBestMatchingSize(sizes: Array<Size>, targetWidth: Int, targetHeight: Int): Size {
+        if (sizes.isEmpty()) return Size(640, 480)
+
+        // Find exact match if exists
+        val exact = sizes.firstOrNull { (it.width == targetWidth && it.height == targetHeight) || (it.width == targetHeight && it.height == targetWidth) }
+        if (exact != null) return exact
+
+        // Find sizes with resolution <= 1280x720, pick closest to 640x480
+        val compactSizes = sizes.filter { it.width * it.height <= 1280 * 720 }
+        if (compactSizes.isNotEmpty()) {
+            return compactSizes.minByOrNull { Math.abs((it.width * it.height) - (targetWidth * targetHeight)) } ?: compactSizes[0]
+        }
+
+        // Default to smallest supported size to minimize network overhead
+        return sizes.minByOrNull { it.width * it.height } ?: Size(640, 480)
     }
 
     private fun stopCameraCapture() {
@@ -242,7 +429,7 @@ object CameraStreamManager {
             imageReader?.close()
             imageReader = null
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.e(TAG, "Error closing camera capture: ${e.message}")
         }
     }
 
@@ -260,7 +447,7 @@ object CameraStreamManager {
             backgroundThread = null
             backgroundHandler = null
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.e(TAG, "Error stopping background thread: ${e.message}")
         }
     }
 }
