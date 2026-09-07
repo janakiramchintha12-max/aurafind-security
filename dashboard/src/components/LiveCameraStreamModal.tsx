@@ -40,6 +40,7 @@ export const LiveCameraStreamModal: React.FC<LiveCameraStreamModalProps> = ({ de
   // 1. WebSocket & Fast Frame Ingestion Pipeline
   useEffect(() => {
     commandsApi.dispatch(device.id, 'START_CAMERA_STREAM', { facing: currentFacing }).catch(console.error);
+    commandsApi.dispatch(device.id, 'CAPTURE_SNAPSHOT', { facing: currentFacing }).catch(console.error);
 
     const handleIncomingDataUrl = (dataUrl: string, facing?: string) => {
       if (!dataUrl) return;
@@ -61,6 +62,13 @@ export const LiveCameraStreamModal: React.FC<LiveCameraStreamModalProps> = ({ de
       img.src = fullSrc;
     };
 
+    // Immediate instant frame load
+    cameraApi.getLatestFrame(device.id).then((data) => {
+      if (data && data.has_frame && data.image_data) {
+        handleIncomingDataUrl(data.image_data, data.facing);
+      }
+    }).catch(() => {});
+
     const cleanupWs = connectWebSocket((eventData: any) => {
       if (eventData?.event === 'LIVE_CAMERA_FRAME' && eventData?.device_id === device.id) {
         if (eventData.image_data) {
@@ -69,7 +77,7 @@ export const LiveCameraStreamModal: React.FC<LiveCameraStreamModalProps> = ({ de
       }
     });
 
-    // High-speed fallback poller (every 60ms)
+    // High-speed fallback poller (every 50ms)
     const interval = setInterval(async () => {
       if (!isStreaming) return;
       try {
@@ -80,7 +88,7 @@ export const LiveCameraStreamModal: React.FC<LiveCameraStreamModalProps> = ({ de
       } catch (e) {
         // quiet
       }
-    }, 60);
+    }, 50);
 
     return () => {
       cleanupWs();

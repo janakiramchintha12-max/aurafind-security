@@ -60,7 +60,8 @@ async def push_camera_frame(
 
 @router.get("/{device_id}/camera/latest")
 def get_latest_camera_frame(
-    device: Device = Depends(verify_device_ownership)
+    device: Device = Depends(verify_device_ownership),
+    db: Session = Depends(get_db)
 ):
     if device.enrollment_status == "REVOKED":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Device enrollment has been revoked")
@@ -70,5 +71,16 @@ def get_latest_camera_frame(
 
     frame = latest_device_frames.get(device.id)
     if not frame:
+        from app.models.snapshot import Snapshot
+        snap = db.query(Snapshot).filter(Snapshot.device_id == device.id).order_by(Snapshot.timestamp.desc()).first()
+        if snap and snap.image_data:
+            return {
+                "has_frame": True,
+                "image_data": snap.image_data,
+                "facing": "FRONT",
+                "fps": 1.0,
+                "timestamp": snap.timestamp.isoformat() if snap.timestamp else None,
+                "privacy_state": device.camera_privacy_state
+            }
         return {"has_frame": False, "image_data": None, "facing": "FRONT", "privacy_state": device.camera_privacy_state}
     return {"has_frame": True, **frame, "privacy_state": device.camera_privacy_state}
