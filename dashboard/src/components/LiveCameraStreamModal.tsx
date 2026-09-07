@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Video, Camera, RefreshCw, X, Maximize2, Minimize2, RotateCw, FlipHorizontal, Shield, Eye, AlertTriangle, Radio, Download, Zap, Sparkles, Gauge } from 'lucide-react';
+import { Video, Camera, RefreshCw, X, Maximize2, Minimize2, RotateCw, FlipHorizontal, Radio, Download, Zap, Sparkles, Gauge, Sliders } from 'lucide-react';
 import { commandsApi, cameraApi, connectWebSocket } from '../services/api';
 import { Device } from '../types';
 
@@ -11,6 +11,7 @@ interface LiveCameraStreamModalProps {
 interface QueuedFrame {
   img: HTMLImageElement;
   timestamp: number;
+  seq?: number;
 }
 
 export const LiveCameraStreamModal: React.FC<LiveCameraStreamModalProps> = ({ device, onClose }) => {
@@ -22,29 +23,39 @@ export const LiveCameraStreamModal: React.FC<LiveCameraStreamModalProps> = ({ de
   const [rotationDegrees, setRotationDegrees] = useState<number>(0);
   const [isMirrored, setIsMirrored] = useState<boolean>(false);
   const [enhanceFilter, setEnhanceFilter] = useState<boolean>(true);
-  const [bufferMode, setBufferMode] = useState<'SMOOTH' | 'LIVE'>('LIVE');
+  const [streamEngine, setStreamEngine] = useState<'SMOOTH_BUFFER' | 'NATIVE_MJPEG' | 'DIRECT_LIVE'>('SMOOTH_BUFFER');
+  const [bufferDelayMs, setBufferDelayMs] = useState<number>(2500); // 2.5s smooth playout delay
   const [displayFps, setDisplayFps] = useState<number>(60);
-  const [latencyMs, setLatencyMs] = useState<number>(80);
+  const [bufferQueueDepth, setBufferQueueDepth] = useState<number>(0);
   const [hasReceivedFirstFrame, setHasReceivedFirstFrame] = useState<boolean>(false);
   const [rawFrameSrc, setRawFrameSrc] = useState<string | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   
-  // High-performance ring buffer for 120 FPS smooth interpolation
+  // High-performance ring buffer for 60 FPS jitter-free playback
   const frameQueueRef = useRef<QueuedFrame[]>([]);
   const latestImgRef = useRef<HTMLImageElement | null>(null);
   const animFrameIdRef = useRef<number | null>(null);
+  const lastSeenKeyRef = useRef<string>('');
+  const lastFrameReceivedTimeRef = useRef<number>(performance.now());
   const fpsCounterRef = useRef<{ frames: number; lastTime: number }>({ frames: 0, lastTime: performance.now() });
 
   // 1. WebSocket & Fast Frame Ingestion Pipeline
   useEffect(() => {
     commandsApi.dispatch(device.id, 'START_CAMERA_STREAM', { facing: currentFacing }).catch(console.error);
-    commandsApi.dispatch(device.id, 'CAPTURE_SNAPSHOT', { facing: currentFacing }).catch(console.error);
 
-    const handleIncomingDataUrl = (dataUrl: string, facing?: string) => {
+    const handleIncomingFrame = (dataUrl: string, facing?: string, timestamp?: string, seq?: number) => {
       if (!dataUrl) return;
       const fullSrc = dataUrl.startsWith('data:') ? dataUrl : `data:image/jpeg;base64,${dataUrl}`;
+      
+      const frameKey = seq ? `seq_${seq}` : (timestamp ? `ts_${timestamp}` : fullSrc.slice(-30));
+      if (lastSeenKeyRef.current === frameKey) {
+        return; // deduplicate
+      }
+      lastSeenKeyRef.current = frameKey;
+      lastFrameReceivedTimeRef.current = performance.now();
+
       setRawFrameSrc(fullSrc);
       setHasReceivedFirstFrame(true);
 
@@ -52,52 +63,59 @@ export const LiveCameraStreamModal: React.FC<LiveCameraStreamModalProps> = ({ de
       img.onload = () => {
         const now = performance.now();
         latestImgRef.current = img;
-        frameQueueRef.current.push({ img, timestamp: now });
-        if (frameQueueRef.current.length > 180) {
+        frameQueueRef.current.push({ img, timestamp: now, seq });
+        
+        // Retain max 300 frames in queue (~10s max)
+        if (frameQueueRef.current.length > 300) {
           frameQueueRef.current.shift();
         }
+        setBufferQueueDepth(frameQueueRef.current.length);
         setFrameCount(c => c + 1);
         if (facing) setCurrentFacing(facing.toUpperCase() as 'FRONT' | 'BACK');
       };
       img.src = fullSrc;
     };
 
-    // Immediate instant frame load
+    // Initial frame load
     cameraApi.getLatestFrame(device.id).then((data) => {
       if (data && data.has_frame && data.image_data) {
-        handleIncomingDataUrl(data.image_data, data.facing);
+        handleIncomingFrame(data.image_data, data.facing, data.timestamp, data.seq);
       }
     }).catch(() => {});
 
+    // Live WebSocket stream ingestion
     const cleanupWs = connectWebSocket((eventData: any) => {
       if (eventData?.event === 'LIVE_CAMERA_FRAME' && eventData?.device_id === device.id) {
         if (eventData.image_data) {
-          handleIncomingDataUrl(eventData.image_data, eventData.facing);
+          handleIncomingFrame(eventData.image_data, eventData.facing, eventData.timestamp, eventData.seq);
         }
       }
     });
 
-    // High-speed fallback poller (every 50ms)
-    const interval = setInterval(async () => {
+    // Smart Watchdog Poller: only queries backend if WebSocket has been silent for > 500ms
+    const watchdogInterval = setInterval(async () => {
       if (!isStreaming) return;
-      try {
-        const data = await cameraApi.getLatestFrame(device.id);
-        if (data && data.has_frame && data.image_data) {
-          handleIncomingDataUrl(data.image_data, data.facing);
+      const silentDuration = performance.now() - lastFrameReceivedTimeRef.current;
+      if (silentDuration > 500) {
+        try {
+          const data = await cameraApi.getLatestFrame(device.id);
+          if (data && data.has_frame && data.image_data) {
+            handleIncomingFrame(data.image_data, data.facing, data.timestamp, data.seq);
+          }
+        } catch (e) {
+          // quiet
         }
-      } catch (e) {
-        // quiet
       }
-    }, 50);
+    }, 400);
 
     return () => {
       cleanupWs();
-      clearInterval(interval);
+      clearInterval(watchdogInterval);
       commandsApi.dispatch(device.id, 'STOP_CAMERA_STREAM').catch(console.error);
     };
   }, [device.id, currentFacing]);
 
-  // 2. Hardware-Accelerated 60/120 FPS Canvas Renderer with Motion Smoothing
+  // 2. Hardware-Accelerated 60 FPS Jitter-Buffer Renderer with Smooth Time-Pacing
   useEffect(() => {
     let active = true;
 
@@ -105,24 +123,35 @@ export const LiveCameraStreamModal: React.FC<LiveCameraStreamModalProps> = ({ de
       if (!active) return;
 
       const canvas = canvasRef.current;
-      if (canvas) {
+      if (canvas && streamEngine !== 'NATIVE_MJPEG') {
         const ctx = canvas.getContext('2d', { alpha: false });
         if (ctx) {
           let targetImg: HTMLImageElement | null = null;
 
-          if (bufferMode === 'LIVE') {
+          if (streamEngine === 'DIRECT_LIVE') {
             targetImg = latestImgRef.current;
           } else {
-            // Smooth Jitter Buffer: smooth continuous frame pacing
-            const bufferDelayMs = 2500; // 2.5s buffer for ultra-smooth fluid motion
+            // Smooth Playout Jitter Buffer (Paces frames out at constant 60 FPS clock)
             const targetTime = now - bufferDelayMs;
+            const q = frameQueueRef.current;
 
-            while (frameQueueRef.current.length > 1 && frameQueueRef.current[0].timestamp < targetTime) {
-              frameQueueRef.current.shift();
+            // Remove frames that are older than targetTime - 1200ms
+            while (q.length > 2 && q[0].timestamp < targetTime - 1200) {
+              q.shift();
             }
 
-            if (frameQueueRef.current.length > 0) {
-              targetImg = frameQueueRef.current[0].img;
+            if (q.length > 0) {
+              // Find the frame closest to targetTime
+              let bestIdx = 0;
+              let minDiff = Math.abs(q[0].timestamp - targetTime);
+              for (let i = 1; i < q.length; i++) {
+                const diff = Math.abs(q[i].timestamp - targetTime);
+                if (diff < minDiff) {
+                  minDiff = diff;
+                  bestIdx = i;
+                }
+              }
+              targetImg = q[bestIdx].img;
             } else {
               targetImg = latestImgRef.current;
             }
@@ -146,7 +175,7 @@ export const LiveCameraStreamModal: React.FC<LiveCameraStreamModalProps> = ({ de
             ctx.imageSmoothingQuality = 'high';
 
             if (enhanceFilter) {
-              ctx.filter = 'contrast(1.08) brightness(1.04) saturate(1.1)';
+              ctx.filter = 'contrast(1.06) brightness(1.03) saturate(1.08)';
             } else {
               ctx.filter = 'none';
             }
@@ -181,7 +210,7 @@ export const LiveCameraStreamModal: React.FC<LiveCameraStreamModalProps> = ({ de
       active = false;
       if (animFrameIdRef.current) cancelAnimationFrame(animFrameIdRef.current);
     };
-  }, [bufferMode, rotationDegrees, isMirrored, enhanceFilter]);
+  }, [streamEngine, bufferDelayMs, rotationDegrees, isMirrored, enhanceFilter]);
 
   const handleSwitchCamera = async () => {
     setLoading(true);
@@ -220,6 +249,8 @@ export const LiveCameraStreamModal: React.FC<LiveCameraStreamModalProps> = ({ de
     }
   };
 
+  const mjpegStreamUrl = `/api/v1/devices/${device.id}/camera/mjpeg`;
+
   return (
     <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-lg flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
       <div
@@ -237,44 +268,55 @@ export const LiveCameraStreamModal: React.FC<LiveCameraStreamModalProps> = ({ de
             </div>
             <div>
               <h2 className="text-lg font-black text-white flex items-center gap-2">
-                <span>Ultra-Smooth 120 FPS Optical Stream</span>
+                <span>Ultra-Smooth 60 FPS Optical Stream</span>
                 <span className="text-[11px] bg-rose-600 text-white font-black px-2.5 py-0.5 rounded-full flex items-center gap-1 shadow-lg shadow-rose-600/30">
                   <span className="w-2 h-2 rounded-full bg-white animate-ping"></span>
                   LIVE • {currentFacing === 'FRONT' ? '👤 INTRUDER FRONT LENS' : '🏙️ REAR ENVIRONMENT LENS'}
                 </span>
               </h2>
               <p className="text-xs text-slate-400">
-                {device.device_name} • GPU Accelerated Canvas Engine • Fluid Playback Buffer
+                {device.device_name} • 2.5s Fluid Jitter Buffer Engine • 60 FPS Playback
               </p>
             </div>
           </div>
 
           <div className="flex items-center space-x-2">
-            {/* Mode Switcher: Smooth Buffered vs Live */}
+            {/* Engine Switcher */}
             <div className="flex bg-slate-800 p-1 rounded-xl border border-slate-700 text-xs font-bold">
               <button
-                onClick={() => setBufferMode('SMOOTH')}
+                onClick={() => { setStreamEngine('SMOOTH_BUFFER'); setBufferDelayMs(2500); }}
                 className={`px-2.5 py-1 rounded-lg transition-all flex items-center gap-1 ${
-                  bufferMode === 'SMOOTH'
+                  streamEngine === 'SMOOTH_BUFFER'
                     ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow'
                     : 'text-slate-400 hover:text-white'
                 }`}
-                title="Ultra-Smooth Buffered Playback (Absorbs network jitter)"
+                title="2.5s Jitter Buffer: Absorbs mobile cellular network delays for buttery-smooth 60 FPS video"
               >
                 <Sparkles className="w-3.5 h-3.5" />
-                <span>Smooth 120Hz</span>
+                <span>🎬 Smooth 2.5s Buffer</span>
               </button>
               <button
-                onClick={() => setBufferMode('LIVE')}
+                onClick={() => setStreamEngine('NATIVE_MJPEG')}
                 className={`px-2.5 py-1 rounded-lg transition-all flex items-center gap-1 ${
-                  bufferMode === 'LIVE'
+                  streamEngine === 'NATIVE_MJPEG'
+                    ? 'bg-purple-600 text-white shadow'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+                title="Native C++ Browser MJPEG Stream"
+              >
+                <Zap className="w-3.5 h-3.5" />
+                <span>⚡ Native MJPEG</span>
+              </button>
+              <button
+                onClick={() => setStreamEngine('DIRECT_LIVE')}
+                className={`px-2.5 py-1 rounded-lg transition-all flex items-center gap-1 ${
+                  streamEngine === 'DIRECT_LIVE'
                     ? 'bg-rose-600 text-white shadow'
                     : 'text-slate-400 hover:text-white'
                 }`}
                 title="Direct Zero-Delay Stream"
               >
-                <Zap className="w-3.5 h-3.5" />
-                <span>Instant Live</span>
+                <span>🔴 Instant Live</span>
               </button>
             </div>
 
@@ -288,7 +330,7 @@ export const LiveCameraStreamModal: React.FC<LiveCameraStreamModalProps> = ({ de
               <span>Rotate ({rotationDegrees}°)</span>
             </button>
 
-            {/* Mirror / Flip Button */}
+            {/* Mirror Button */}
             <button
               onClick={() => setIsMirrored(prev => !prev)}
               className={`p-2 rounded-xl border text-xs font-bold transition-all ${
@@ -327,24 +369,45 @@ export const LiveCameraStreamModal: React.FC<LiveCameraStreamModalProps> = ({ de
           </div>
         </div>
 
-        {/* Video GPU Canvas HUD */}
+        {/* Video Canvas / Stream Player */}
         <div className={`relative bg-black rounded-2xl overflow-hidden border-2 border-slate-800 shadow-2xl flex items-center justify-center ${
           isFullscreen ? 'flex-1' : 'aspect-video max-h-[520px]'
         }`}>
-          <canvas
-            ref={canvasRef}
-            className={`w-full h-full object-contain select-none transition-all ${
-              hasReceivedFirstFrame ? 'block' : 'hidden'
-            }`}
-          />
+          
+          {/* Engine 1 & 3: Hardware Canvas with 2.5s Jitter Buffer or Direct Live */}
+          {streamEngine !== 'NATIVE_MJPEG' && (
+            <canvas
+              ref={canvasRef}
+              className={`w-full h-full object-contain select-none transition-all ${
+                hasReceivedFirstFrame ? 'block' : 'hidden'
+              }`}
+            />
+          )}
 
-          {!hasReceivedFirstFrame && rawFrameSrc && (
+          {/* Engine 2: Native Browser C++ MJPEG Stream */}
+          {streamEngine === 'NATIVE_MJPEG' && (
+            <img
+              src={mjpegStreamUrl}
+              alt="Native MJPEG Stream"
+              style={{
+                transform: `rotate(${rotationDegrees}deg) scaleX(${isMirrored ? -1 : 1})`,
+                filter: enhanceFilter ? 'contrast(1.06) brightness(1.03) saturate(1.08)' : 'none'
+              }}
+              className="w-full h-full object-contain select-none"
+              onError={() => {
+                // fallback to canvas if MJPEG dropped
+                setStreamEngine('SMOOTH_BUFFER');
+              }}
+            />
+          )}
+
+          {!hasReceivedFirstFrame && rawFrameSrc && streamEngine !== 'NATIVE_MJPEG' && (
             <img
               src={rawFrameSrc}
               alt="Live video stream"
               style={{
                 transform: `rotate(${rotationDegrees}deg) scaleX(${isMirrored ? -1 : 1})`,
-                filter: enhanceFilter ? 'contrast(1.08) brightness(1.05) saturate(1.1)' : 'none'
+                filter: enhanceFilter ? 'contrast(1.06) brightness(1.03) saturate(1.08)' : 'none'
               }}
               className="w-full h-full object-contain select-none"
             />
@@ -354,14 +417,16 @@ export const LiveCameraStreamModal: React.FC<LiveCameraStreamModalProps> = ({ de
             <div className="text-center space-y-3 text-slate-400 p-8">
               <RefreshCw className="w-10 h-10 text-cyan-400 animate-spin mx-auto" />
               <div className="text-sm font-black text-white">Opening Remote Camera Hardware...</div>
-              <div className="text-xs text-slate-400">Negotiating High-FPS Stream with {currentFacing} Sensor</div>
+              <div className="text-xs text-slate-400">Buffering smooth stream from {currentFacing} Sensor ({device.device_name})</div>
             </div>
           )}
 
           {/* Top-Left HUD Info */}
           <div className="absolute top-3 left-3 bg-black/70 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/15 text-[11px] font-mono text-cyan-300 flex items-center space-x-2.5 shadow-lg">
             <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse"></span>
-            <span className="font-bold">🔴 120 FPS STREAM • {currentFacing}</span>
+            <span className="font-bold">
+              {streamEngine === 'SMOOTH_BUFFER' ? '🎬 2.5s FLUID BUFFER • 60 FPS' : streamEngine === 'NATIVE_MJPEG' ? '⚡ NATIVE MJPEG • TURBO' : '🔴 0ms DIRECT LIVE'}
+            </span>
           </div>
 
           {/* Top-Right Telemetry */}
@@ -371,7 +436,7 @@ export const LiveCameraStreamModal: React.FC<LiveCameraStreamModalProps> = ({ de
               {displayFps} FPS Fluid
             </span>
             <span className="text-emerald-400 font-bold">
-              {bufferMode === 'SMOOTH' ? '🎬 2.5s Jitter Buffered' : '⚡ 0ms Direct Live'}
+              {streamEngine === 'SMOOTH_BUFFER' ? `🎬 ${bufferQueueDepth} frames buffered` : '⚡ Native Stream'}
             </span>
             <span>🖼️ #{frameCount}</span>
           </div>
@@ -386,6 +451,50 @@ export const LiveCameraStreamModal: React.FC<LiveCameraStreamModalProps> = ({ de
             </div>
           </div>
         </div>
+
+        {/* Jitter Buffer Latency Tuning Bar */}
+        {streamEngine === 'SMOOTH_BUFFER' && (
+          <div className="bg-slate-800/80 border border-slate-700/60 rounded-2xl p-2.5 flex flex-wrap items-center justify-between gap-2 text-xs">
+            <div className="flex items-center space-x-2 text-slate-300 font-semibold">
+              <Sliders className="w-4 h-4 text-cyan-400" />
+              <span>Smooth Buffer Delay:</span>
+              <span className="text-cyan-300 font-bold font-mono">{(bufferDelayMs / 1000).toFixed(1)}s</span>
+              <span className="text-slate-400 text-[11px]">({bufferQueueDepth} frames in queue)</span>
+            </div>
+            <div className="flex items-center space-x-1.5 font-bold">
+              <button
+                onClick={() => setBufferDelayMs(1500)}
+                className={`px-2.5 py-1 rounded-lg transition-all ${
+                  bufferDelayMs === 1500
+                    ? 'bg-cyan-600 text-white shadow'
+                    : 'bg-slate-700/60 text-slate-300 hover:text-white'
+                }`}
+              >
+                1.5s (Fast)
+              </button>
+              <button
+                onClick={() => setBufferDelayMs(2500)}
+                className={`px-2.5 py-1 rounded-lg transition-all ${
+                  bufferDelayMs === 2500
+                    ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow'
+                    : 'bg-slate-700/60 text-slate-300 hover:text-white'
+                }`}
+              >
+                ⭐ 2.5s (Recommended Smooth)
+              </button>
+              <button
+                onClick={() => setBufferDelayMs(3500)}
+                className={`px-2.5 py-1 rounded-lg transition-all ${
+                  bufferDelayMs === 3500
+                    ? 'bg-purple-600 text-white shadow'
+                    : 'bg-slate-700/60 text-slate-300 hover:text-white'
+                }`}
+              >
+                3.5s (Max Stability)
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Tactical Controls Toolbar */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -426,3 +535,4 @@ export const LiveCameraStreamModal: React.FC<LiveCameraStreamModalProps> = ({ de
     </div>
   );
 };
+

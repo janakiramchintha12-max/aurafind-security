@@ -42,8 +42,8 @@ object CameraStreamManager {
     private var backgroundHandler: Handler? = null
 
     private val isUploading = AtomicBoolean(false)
-    private var lastFrameTime = 0L
-    private const val MIN_FRAME_INTERVAL_MS = 40L // Up to 25 FPS stream
+    private val frameLock = Any()
+    private var latestPendingFrame: ByteArray? = null
 
     fun isStreamActive(): Boolean = isStreaming
     fun getCurrentFacing(): String = currentFacing
@@ -287,11 +287,6 @@ object CameraStreamManager {
             imageReader?.setOnImageAvailableListener({ reader ->
                 val image = reader.acquireLatestImage() ?: return@setOnImageAvailableListener
                 try {
-                    val now = System.currentTimeMillis()
-                    if (now - lastFrameTime < MIN_FRAME_INTERVAL_MS || !isUploading.compareAndSet(false, true)) {
-                        return@setOnImageAvailableListener
-                    }
-
                     val planes = image.planes
                     if (planes.isNotEmpty()) {
                         val buffer = planes[0].buffer
@@ -299,37 +294,14 @@ object CameraStreamManager {
                         buffer.get(bytes)
 
                         if (bytes.isNotEmpty()) {
-                            lastFrameTime = now
-
-                            scope.launch {
-                                try {
-                                    val base64 = "data:image/jpeg;base64," + Base64.encodeToString(bytes, Base64.NO_WRAP)
-                                    val timeIso = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).format(Date())
-
-                                    apiService.pushCameraFrame(
-                                        deviceId = deviceId,
-                                        deviceToken = deviceToken,
-                                        request = CameraFrameRequest(
-                                            image_data = base64,
-                                            facing = currentFacing,
-                                            fps = 20.0f,
-                                            timestamp = timeIso
-                                        )
-                                    )
-                                } catch (e: Exception) {
-                                    Log.e(TAG, "Error pushing live camera frame: ${e.message}")
-                                } finally {
-                                    isUploading.set(false)
-                                }
+                            synchronized(frameLock) {
+                                latestPendingFrame = bytes
                             }
-                        } else {
-                            isUploading.set(false)
+                            triggerFrameUpload(apiService, deviceId, deviceToken)
                         }
-                    } else {
-                        isUploading.set(false)
                     }
                 } catch (e: Exception) {
-                    isUploading.set(false)
+                    // quiet
                 } finally {
                     image.close()
                 }
@@ -357,6 +329,46 @@ object CameraStreamManager {
 
         } catch (e: Exception) {
             Log.e(TAG, "Exception opening camera: ${e.message}")
+        }
+    }
+
+    private fun triggerFrameUpload(apiService: ApiService, deviceId: String, deviceToken: String) {
+        if (!isStreaming) return
+        if (isUploading.compareAndSet(false, true)) {
+            scope.launch(Dispatchers.IO) {
+                try {
+                    while (isStreaming) {
+                        val frameBytes = synchronized(frameLock) {
+                            val b = latestPendingFrame
+                            latestPendingFrame = null
+                            b
+                        } ?: break
+
+                        val base64 = "data:image/jpeg;base64," + Base64.encodeToString(frameBytes, Base64.NO_WRAP)
+                        val timeIso = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).format(Date())
+
+                        try {
+                            apiService.pushCameraFrame(
+                                deviceId = deviceId,
+                                deviceToken = deviceToken,
+                                request = CameraFrameRequest(
+                                    image_data = base64,
+                                    facing = currentFacing,
+                                    fps = 20.0f,
+                                    timestamp = timeIso
+                                )
+                            )
+                        } catch (e: Exception) {
+                            // quiet network drops
+                        }
+
+                        // Minimal breathing space to ensure packet pacing
+                        delay(25L)
+                    }
+                } finally {
+                    isUploading.set(false)
+                }
+            }
         }
     }
 
@@ -395,7 +407,7 @@ object CameraStreamManager {
                                 set(CaptureRequest.CONTROL_AE_MODE, CameraMetadata.CONTROL_AE_MODE_ON)
                             }
 
-                            set(CaptureRequest.JPEG_QUALITY, 65.toByte())
+                            set(CaptureRequest.JPEG_QUALITY, 55.toByte())
 
                             if (isTorchOn && currentFacing == "BACK") {
                                 set(CaptureRequest.FLASH_MODE, CameraMetadata.FLASH_MODE_TORCH)
@@ -409,19 +421,7 @@ object CameraStreamManager {
                             }
                         }, backgroundHandler)
 
-                        // Also launch active capture pacing loop to guarantee hardware frames on any HAL
-                        scope.launch {
-                            while (isStreaming && captureSession != null) {
-                                try {
-                                    captureSession?.capture(req, null, backgroundHandler)
-                                } catch (e: Exception) {
-                                    // quiet
-                                }
-                                delay(120L) // ~8-10 FPS continuous active trigger
-                            }
-                        }
-
-                        Log.i(TAG, "Capture session configured and repeating request started")
+                        Log.i(TAG, "Capture session configured and repeating request active")
                     } catch (e: Exception) {
                         Log.e(TAG, "Error configuring repeating request: ${e.message}")
                     }
