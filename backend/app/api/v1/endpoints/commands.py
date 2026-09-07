@@ -31,6 +31,10 @@ ALLOWED_COMMAND_TYPES = {
     "START_VOICE_CALL",
     "END_VOICE_CALL",
     "RECORD_AUDIO_CLIP",
+    "RECORD_AUDIO",
+    "START_AUDIO_RECORDING",
+    "STOP_AUDIO_RECORDING",
+    "STOP_AUDIO_CLIP",
     "START_VIDEO_RECORDING",
     "STOP_VIDEO_RECORDING"
 }
@@ -63,12 +67,12 @@ async def dispatch_command(
                 detail="Camera remote access is paused by the physical device user."
             )
 
-    if command_in.command_type in {"START_VOICE_CALL"}:
+    if command_in.command_type in {"START_VOICE_CALL", "RECORD_AUDIO_CLIP", "RECORD_AUDIO", "START_AUDIO_RECORDING"}:
         if device.microphone_privacy_state == "PAUSED_BY_DEVICE_USER" and device.speaker_privacy_state == "PAUSED_BY_DEVICE_USER":
             detail_msg = "Microphone and speaker remote access is paused by the physical device user."
         elif device.microphone_privacy_state == "PAUSED_BY_DEVICE_USER":
             detail_msg = "Microphone remote access is paused by the physical device user."
-        elif device.speaker_privacy_state == "PAUSED_BY_DEVICE_USER":
+        elif device.speaker_privacy_state == "PAUSED_BY_DEVICE_USER" and command_in.command_type == "START_VOICE_CALL":
             detail_msg = "Speaker remote access is paused by the physical device user."
         else:
             detail_msg = None

@@ -372,12 +372,35 @@ export const LiveAudioPage: React.FC = () => {
   }, [isListening]);
 
   // Handle Trigger HD Audio Recording from Phone
+  const formatDurationDisplay = (seconds: number) => {
+    if (seconds < 60) return `${seconds}s`;
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    if (m < 60) return s > 0 ? `${m}m ${s}s` : `${m}m`;
+    const h = Math.floor(m / 60);
+    const remM = m % 60;
+    return remM > 0 ? `${h}h ${remM}m` : `${h}h`;
+  };
+
+  const formatCountdownTimer = (totalSeconds: number | null) => {
+    if (totalSeconds === null || totalSeconds < 0) return '00:00';
+    const hours = Math.floor(totalSeconds / 3600);
+    const mins = Math.floor((totalSeconds % 3600) / 60);
+    const secs = totalSeconds % 60;
+    if (hours > 0) {
+      return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    }
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  // Handle Trigger HD Audio Recording from Phone (Up to 3 hours / 10,800s)
   const handleTriggerHdRecording = async () => {
     if (!selectedDevice || isTriggeringRecording) return;
 
     try {
       setIsTriggeringRecording(true);
-      setRecordingStatusMsg(`Command sent: Recording ${recordDuration}s HD Audio Clip on phone...`);
+      const readable = formatDurationDisplay(recordDuration);
+      setRecordingStatusMsg(`Command dispatched: Recording ${readable} HD Audio on phone...`);
       setRecordCountdown(recordDuration);
 
       // Dispatch command to Android app
@@ -391,7 +414,7 @@ export const LiveAudioPage: React.FC = () => {
         remaining -= 1;
         if (remaining > 0) {
           setRecordCountdown(remaining);
-          setRecordingStatusMsg(`Phone is recording HD audio from hardware microphone... (${remaining}s remaining)`);
+          setRecordingStatusMsg(`Phone is recording HD audio from hardware mic... (${formatCountdownTimer(remaining)} remaining)`);
         } else {
           setRecordCountdown(0);
           setRecordingStatusMsg('Finishing recording & uploading HD audio file to cloud...');
@@ -411,6 +434,27 @@ export const LiveAudioPage: React.FC = () => {
       alert(`Failed to trigger HD recording: ${e?.response?.data?.detail || e.message}`);
       setIsTriggeringRecording(false);
       setRecordCountdown(null);
+    }
+  };
+
+  // Handle Stop HD Audio Recording Early
+  const handleStopHdRecording = async () => {
+    if (!selectedDevice || !isTriggeringRecording) return;
+    try {
+      setRecordingStatusMsg('Stopping recording early and uploading audio to cloud...');
+      await commandsApi.dispatch(selectedDevice.id, 'STOP_AUDIO_RECORDING');
+      if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
+      setRecordCountdown(0);
+      setTimeout(() => {
+        if (selectedDevice) {
+          fetchRecordings(selectedDevice.id);
+        }
+        setIsTriggeringRecording(false);
+        setRecordingStatusMsg('✅ HD Audio recording successfully uploaded!');
+      }, 3000);
+    } catch (e: any) {
+      console.error('Failed to stop recording early', e);
+      setIsTriggeringRecording(false);
     }
   };
 
@@ -686,24 +730,58 @@ export const LiveAudioPage: React.FC = () => {
               When you click record, your phone silently records audio using high-gain hardware microphones, uploads the audio file to your cloud storage, and allows instant playback directly in this dashboard.
             </p>
 
-            {/* Duration Selector */}
-            <div className="pt-2 flex items-center gap-3">
-              <span className="text-xs text-slate-400 font-medium">Select Duration:</span>
-              <div className="flex gap-2">
-                {[5, 10, 30, 60, 120].map((dur) => (
+            {/* Duration Selector (Up to 3 Hours) */}
+            <div className="pt-2 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-slate-400 font-medium">Select Recording Length:</span>
+                <span className="text-xs font-bold text-cyan-400 font-mono bg-cyan-950/60 px-2.5 py-0.5 rounded-lg border border-cyan-500/30">
+                  Target: {formatDurationDisplay(recordDuration)}
+                </span>
+              </div>
+
+              {/* Quick Preset Buttons (Up to 3 Hours) */}
+              <div className="flex flex-wrap gap-1.5">
+                {[
+                  { label: '30s', val: 30 },
+                  { label: '1m', val: 60 },
+                  { label: '5m', val: 300 },
+                  { label: '15m', val: 900 },
+                  { label: '30m', val: 1800 },
+                  { label: '1h', val: 3600 },
+                  { label: '2h', val: 7200 },
+                  { label: '3h (Max)', val: 10800 }
+                ].map((p) => (
                   <button
-                    key={dur}
-                    onClick={() => setRecordDuration(dur)}
+                    key={p.val}
+                    onClick={() => setRecordDuration(p.val)}
                     disabled={isTriggeringRecording}
                     className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
-                      recordDuration === dur
+                      recordDuration === p.val
                         ? 'bg-cyan-500 text-slate-950 border-cyan-400 shadow-lg shadow-cyan-500/25 scale-105'
                         : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
                     }`}
                   >
-                    {dur < 60 ? `${dur}s` : `${dur / 60}m`}
+                    {p.label}
                   </button>
                 ))}
+              </div>
+
+              {/* Custom Duration Slider (10s to 3 Hours / 180 Mins) */}
+              <div className="pt-1 flex items-center gap-3">
+                <span className="text-[11px] text-slate-400 font-mono min-w-[55px]">Custom:</span>
+                <input
+                  type="range"
+                  min="10"
+                  max="10800"
+                  step="30"
+                  value={recordDuration}
+                  disabled={isTriggeringRecording}
+                  onChange={(e) => setRecordDuration(parseInt(e.target.value))}
+                  className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-cyan-400"
+                />
+                <span className="text-xs font-mono font-bold text-slate-300 min-w-[70px] text-right">
+                  {formatDurationDisplay(recordDuration)}
+                </span>
               </div>
             </div>
           </div>
@@ -717,13 +795,13 @@ export const LiveAudioPage: React.FC = () => {
                 className="w-full sm:w-auto px-8 py-4 bg-gradient-to-r from-cyan-500 via-teal-500 to-emerald-500 hover:from-cyan-400 hover:to-emerald-400 text-slate-950 font-black text-base rounded-2xl flex items-center justify-center gap-3 shadow-xl shadow-cyan-500/30 hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer"
               >
                 <Disc className="w-6 h-6 animate-spin text-slate-950" />
-                <span>Start {recordDuration}s HD Recording</span>
+                <span>Start {formatDurationDisplay(recordDuration)} HD Recording</span>
               </button>
             ) : (
-              <div className="w-full bg-slate-900/90 border border-cyan-500/50 rounded-2xl p-4 shadow-xl text-center space-y-2">
+              <div className="w-full bg-slate-900/90 border border-cyan-500/50 rounded-2xl p-4 shadow-xl text-center space-y-3">
                 <div className="flex items-center justify-center gap-2 text-rose-400 font-black text-sm animate-pulse">
                   <span className="w-3 h-3 rounded-full bg-rose-500"></span>
-                  <span>RECORDING ON PHONE ({recordCountdown !== null ? `${recordCountdown}s` : 'Processing'})</span>
+                  <span>RECORDING ON PHONE ({formatCountdownTimer(recordCountdown)})</span>
                 </div>
                 <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
                   <div 
@@ -733,7 +811,16 @@ export const LiveAudioPage: React.FC = () => {
                     }}
                   />
                 </div>
-                <div className="text-[11px] text-slate-400">{recordingStatusMsg}</div>
+                <div className="text-[11px] text-slate-400 font-mono">{recordingStatusMsg}</div>
+                
+                {/* Stop Early & Save Button */}
+                <button
+                  onClick={handleStopHdRecording}
+                  className="w-full py-2 bg-rose-600/30 hover:bg-rose-600/50 text-rose-200 border border-rose-500/40 rounded-xl text-xs font-bold transition-all flex items-center justify-center space-x-1.5 cursor-pointer shadow-lg"
+                >
+                  <Square className="w-3.5 h-3.5 fill-current" />
+                  <span>⏹️ Stop Recording & Upload Now</span>
+                </button>
               </div>
             )}
             

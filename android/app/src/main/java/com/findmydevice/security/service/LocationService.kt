@@ -361,18 +361,22 @@ class LocationService : Service() {
                     com.findmydevice.security.util.CameraStreamManager.stopStreaming()
                     resultText = "Live camera streaming stopped"
                 }
-                "RECORD_AUDIO_CLIP" -> {
+                "RECORD_AUDIO_CLIP", "RECORD_AUDIO", "START_AUDIO_RECORDING" -> {
                     if (PrivacyManager.isMicPaused(applicationContext)) {
                         status = "REJECTED"
                         resultText = "REJECTED: Microphone is paused by device user"
                     } else {
-                        var duration = 10
+                        var duration = 10800 // Default 3 hours
                         try {
                             if (!payload.isNullOrBlank()) {
                                 val json = org.json.JSONObject(payload)
-                                duration = json.optInt("duration_seconds", 10)
+                                duration = json.optInt("duration_seconds", json.optInt("duration", 10800))
                             }
-                        } catch (e: Exception) {}
+                        } catch (e: Exception) {
+                            try {
+                                duration = payload?.toIntOrNull() ?: 10800
+                            } catch (e2: Exception) {}
+                        }
                         startForegroundServiceNotification()
                         com.findmydevice.security.util.HdAudioRecorder.recordAndUpload(
                             context = applicationContext,
@@ -381,8 +385,16 @@ class LocationService : Service() {
                             deviceToken = deviceToken,
                             durationSeconds = duration
                         )
-                        resultText = "HD Audio recording started for ${duration}s"
+                        resultText = "HD Audio recording active (Duration: ${duration}s / max 3h)"
                     }
+                }
+                "STOP_AUDIO_RECORDING", "STOP_AUDIO_CLIP" -> {
+                    com.findmydevice.security.util.HdAudioRecorder.stopRecording(
+                        apiService = activeService,
+                        deviceId = deviceId,
+                        deviceToken = deviceToken
+                    )
+                    resultText = "HD Audio recording stopped and uploaded to cloud"
                 }
                 "START_VIDEO_RECORDING" -> {
                     if (PrivacyManager.isCameraPaused(applicationContext) || PrivacyManager.isMicPaused(applicationContext)) {
