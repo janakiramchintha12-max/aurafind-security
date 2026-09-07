@@ -6,6 +6,7 @@ from app.models.command import Command
 from app.models.geofence import Geofence, GeofenceEvent
 from app.models.audit import AuditLog
 from app.models.snapshot import Snapshot
+from app.models.audio_recording import AudioRecording
 
 __all__ = [
     "Base",
@@ -16,5 +17,6 @@ __all__ = [
     "Geofence",
     "GeofenceEvent",
     "AuditLog",
-    "Snapshot"
+    "Snapshot",
+    "AudioRecording"
 ]

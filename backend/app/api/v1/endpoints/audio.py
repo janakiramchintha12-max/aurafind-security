@@ -120,3 +120,93 @@ def poll_incoming_audio_for_dashboard(
     while buf:
         chunks.append(buf.popleft())
     return chunks
+
+class AudioRecordingUploadPayload(BaseModel):
+    audio_data: str
+    mime_type: Optional[str] = "audio/mp4"
+    duration_seconds: Optional[float] = 10.0
+
+@router.post("/{device_id}/audio/recordings", status_code=status.HTTP_201_CREATED)
+async def upload_audio_recording(
+    device_id: str,
+    payload: AudioRecordingUploadPayload,
+    x_device_token: str = Header(..., alias="X-Device-Token"),
+    db: Session = Depends(get_db)
+):
+    """
+    Receives an HD audio recording file captured on the device, saves it, and notifies the dashboard.
+    """
+    from app.models.audio_recording import AudioRecording
+
+    device = db.query(Device).filter(Device.id == device_id, Device.device_token == x_device_token).first()
+    if not device:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid device credentials")
+
+    if device.enrollment_status == "REVOKED":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Device enrollment has been revoked")
+
+    recording = AudioRecording(
+        device_id=device.id,
+        user_id=device.user_id,
+        audio_data=payload.audio_data,
+        mime_type=payload.mime_type or "audio/mp4",
+        duration_seconds=payload.duration_seconds or 10.0
+    )
+    db.add(recording)
+    db.commit()
+    db.refresh(recording)
+
+    # Broadcast real-time notification to user dashboard
+    await manager.send_to_user(device.user_id, {
+        "event": "NEW_AUDIO_RECORDING",
+        "device_id": device.id,
+        "recording_id": recording.id,
+        "duration_seconds": recording.duration_seconds,
+        "created_at": recording.created_at.isoformat()
+    })
+
+    return {
+        "status": "success",
+        "recording_id": recording.id,
+        "created_at": recording.created_at.isoformat()
+    }
+
+@router.get("/{device_id}/audio/recordings")
+def list_audio_recordings(
+    device: Device = Depends(verify_device_ownership),
+    db: Session = Depends(get_db)
+):
+    from app.models.audio_recording import AudioRecording
+    recordings = db.query(AudioRecording).filter(
+        AudioRecording.device_id == device.id
+    ).order_by(AudioRecording.created_at.desc()).limit(50).all()
+
+    return [
+        {
+            "id": r.id,
+            "device_id": r.device_id,
+            "audio_data": r.audio_data,
+            "mime_type": r.mime_type,
+            "duration_seconds": r.duration_seconds,
+            "created_at": r.created_at.isoformat()
+        }
+        for r in recordings
+    ]
+
+@router.delete("/{device_id}/audio/recordings/{recording_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_audio_recording(
+    recording_id: str,
+    device: Device = Depends(verify_device_ownership),
+    db: Session = Depends(get_db)
+):
+    from app.models.audio_recording import AudioRecording
+    rec = db.query(AudioRecording).filter(
+        AudioRecording.id == recording_id,
+        AudioRecording.device_id == device.id
+    ).first()
+    if not rec:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Audio recording not found")
+
+    db.delete(rec)
+    db.commit()
+    return None

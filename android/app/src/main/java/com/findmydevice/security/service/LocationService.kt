@@ -368,6 +368,29 @@ class LocationService : Service() {
                     com.findmydevice.security.util.CameraStreamManager.stopStreaming()
                     resultText = "Live camera streaming stopped"
                 }
+                "RECORD_AUDIO_CLIP" -> {
+                    if (PrivacyManager.isMicPaused(applicationContext)) {
+                        status = "REJECTED"
+                        resultText = "REJECTED: Microphone is paused by device user"
+                    } else {
+                        var duration = 10
+                        try {
+                            if (!payload.isNullOrBlank()) {
+                                val json = org.json.JSONObject(payload)
+                                duration = json.optInt("duration_seconds", 10)
+                            }
+                        } catch (e: Exception) {}
+                        startForegroundServiceNotification()
+                        com.findmydevice.security.util.HdAudioRecorder.recordAndUpload(
+                            context = applicationContext,
+                            apiService = activeService,
+                            deviceId = deviceId,
+                            deviceToken = deviceToken,
+                            durationSeconds = duration
+                        )
+                        resultText = "HD Audio recording started for ${duration}s"
+                    }
+                }
                 "START_VOICE_CALL" -> {
                     if (PrivacyManager.isMicPaused(applicationContext)) {
                         status = "REJECTED"

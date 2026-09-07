@@ -48,19 +48,7 @@ def seed_default_admin():
             db.add(admin_user)
             db.commit()
 
-        # COMPLETE FRESH START: PERMANENTLY PURGE ALL DEVICES AND ASSOCIATED DATA
-        from app.models.snapshot import Snapshot
-        from app.models.location import Location
-        from app.models.command import Command
-        from app.models.geofence import Geofence
-        from app.models.audit import AuditLog
-
-        db.query(Snapshot).delete()
-        db.query(Location).delete()
-        db.query(Command).delete()
-        db.query(Geofence).delete()
-        db.query(AuditLog).delete()
-        db.query(Device).delete()
+        # Ensure admin accounts exist
         db.commit()
     except Exception as e:
         logging.getLogger("aurafind.auth").warning(f"Development seed skipped: {e}")

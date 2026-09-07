@@ -119,3 +119,13 @@ export interface AuditLog {
   details?: string;
   timestamp: string;
 }
+
+export interface AudioRecording {
+  id: string;
+  device_id: string;
+  audio_data: string;
+  mime_type: string;
+  duration_seconds: number;
+  created_at: string;
+}
+

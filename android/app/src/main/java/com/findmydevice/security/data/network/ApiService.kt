@@ -147,7 +147,20 @@ interface ApiService {
         @Path("device_id") deviceId: String,
         @Header("X-Device-Token") deviceToken: String
     ): Response<List<String>>
+
+    @POST("api/v1/devices/{device_id}/audio/recordings")
+    suspend fun uploadAudioRecording(
+        @Path("device_id") deviceId: String,
+        @Header("X-Device-Token") deviceToken: String,
+        @Body request: AudioRecordingUploadRequest
+    ): Response<Unit>
 }
+
+data class AudioRecordingUploadRequest(
+    val audio_data: String,
+    val mime_type: String = "audio/mp4",
+    val duration_seconds: Float = 10.0f
+)
 
 data class CameraFrameRequest(
     val image_data: String,

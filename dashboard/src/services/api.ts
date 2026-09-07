@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { Device, LocationRecord, Command, Geofence, GeofenceEvent, AuditLog, Snapshot } from '../types';
+import { Device, LocationRecord, Command, Geofence, GeofenceEvent, AuditLog, Snapshot, AudioRecording } from '../types';
 
 const getBaseUrl = () => {
   if (typeof window !== 'undefined') {
@@ -138,6 +138,13 @@ export const audioApi = {
   pollIncomingAudio: async (deviceId: string): Promise<string[]> => {
     const res = await api.get(`/devices/${deviceId}/audio/dashboard_poll`);
     return res.data;
+  },
+  listRecordings: async (deviceId: string): Promise<AudioRecording[]> => {
+    const res = await api.get(`/devices/${deviceId}/audio/recordings`);
+    return res.data;
+  },
+  deleteRecording: async (deviceId: string, recordingId: string): Promise<void> => {
+    await api.delete(`/devices/${deviceId}/audio/recordings/${recordingId}`);
   }
 };
 
