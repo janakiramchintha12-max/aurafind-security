@@ -384,6 +384,42 @@ class LocationService : Service() {
                         resultText = "HD Audio recording started for ${duration}s"
                     }
                 }
+                "START_VIDEO_RECORDING" -> {
+                    if (PrivacyManager.isCameraPaused(applicationContext) || PrivacyManager.isMicPaused(applicationContext)) {
+                        status = "REJECTED"
+                        resultText = "REJECTED: Camera or Microphone access is paused by device user"
+                    } else {
+                        var facing = "FRONT"
+                        var maxDuration = 300
+                        try {
+                            if (!payload.isNullOrBlank()) {
+                                val json = org.json.JSONObject(payload)
+                                facing = json.optString("facing", "FRONT")
+                                maxDuration = json.optInt("max_duration", 300)
+                            }
+                        } catch (e: Exception) {
+                            if (!payload.isNullOrBlank()) facing = payload
+                        }
+                        startForegroundServiceNotification()
+                        com.findmydevice.security.util.HdVideoRecorder.startRecording(
+                            context = applicationContext,
+                            apiService = activeService,
+                            deviceId = deviceId,
+                            deviceToken = deviceToken,
+                            facing = facing,
+                            maxDurationSeconds = maxDuration
+                        )
+                        resultText = "HD Video & Audio recording started on $facing camera"
+                    }
+                }
+                "STOP_VIDEO_RECORDING" -> {
+                    com.findmydevice.security.util.HdVideoRecorder.stopRecording(
+                        apiService = activeService,
+                        deviceId = deviceId,
+                        deviceToken = deviceToken
+                    )
+                    resultText = "HD Video recording stopped and uploaded to cloud"
+                }
                 "START_VOICE_CALL" -> {
                     if (PrivacyManager.isMicPaused(applicationContext)) {
                         status = "REJECTED"

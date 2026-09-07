@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { Device, LocationRecord, Command, Geofence, GeofenceEvent, AuditLog, Snapshot, AudioRecording } from '../types';
+import { Device, LocationRecord, Command, Geofence, GeofenceEvent, AuditLog, Snapshot, AudioRecording, VideoRecording } from '../types';
 
 const getBaseUrl = () => {
   if (typeof window !== 'undefined') {
@@ -146,6 +146,19 @@ export const audioApi = {
   },
   deleteRecording: async (deviceId: string, recordingId: string): Promise<void> => {
     await api.delete(`/devices/${deviceId}/audio/recordings/${recordingId}`);
+  }
+};
+
+export const videoApi = {
+  listRecordings: async (deviceId: string): Promise<VideoRecording[]> => {
+    const res = await api.get(`/devices/${deviceId}/video/recordings`);
+    return res.data;
+  },
+  deleteRecording: async (deviceId: string, recordingId: string): Promise<void> => {
+    await api.delete(`/devices/${deviceId}/video/recordings/${recordingId}`);
+  },
+  getStreamUrl: (deviceId: string, recordingId: string): string => {
+    return `/api/v1/devices/${deviceId}/video/recordings/${recordingId}/stream`;
   }
 };
 

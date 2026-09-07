@@ -5,7 +5,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, Query, Req
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.database.session import engine, Base
-from app.api.v1.endpoints import auth, devices, locations, commands, geofences, audit, snapshots, camera, audio
+from app.api.v1.endpoints import auth, devices, locations, commands, geofences, audit, snapshots, camera, audio, video
 from app.services.websocket_manager import manager
 from app.core.security import decode_token
 
@@ -139,6 +139,7 @@ app.include_router(commands.router, prefix=f"{settings.API_V1_STR}/devices", tag
 app.include_router(snapshots.router, prefix=f"{settings.API_V1_STR}/devices", tags=["snapshots"])
 app.include_router(camera.router, prefix=f"{settings.API_V1_STR}/devices", tags=["camera"])
 app.include_router(audio.router, prefix=f"{settings.API_V1_STR}/devices", tags=["audio"])
+app.include_router(video.router, prefix=f"{settings.API_V1_STR}/devices", tags=["video"])
 app.include_router(geofences.router, prefix=f"{settings.API_V1_STR}/geofences", tags=["geofences"])
 app.include_router(audit.router, prefix=f"{settings.API_V1_STR}/audit-logs", tags=["audit"])
 

@@ -30,7 +30,9 @@ ALLOWED_COMMAND_TYPES = {
     "SWITCH_CAMERA",
     "START_VOICE_CALL",
     "END_VOICE_CALL",
-    "RECORD_AUDIO_CLIP"
+    "RECORD_AUDIO_CLIP",
+    "START_VIDEO_RECORDING",
+    "STOP_VIDEO_RECORDING"
 }
 
 @router.post("/{device_id}/commands", response_model=CommandResponse, status_code=status.HTTP_201_CREATED)
@@ -51,7 +53,7 @@ async def dispatch_command(
 
     # Strict Device-Controlled Privacy & Consent Authorization Gate
     # Check if physical device user has paused the requested sensor/capability
-    if command_in.command_type in {"START_CAMERA_STREAM", "SWITCH_CAMERA", "CAPTURE_SNAPSHOT"}:
+    if command_in.command_type in {"START_CAMERA_STREAM", "SWITCH_CAMERA", "CAPTURE_SNAPSHOT", "START_VIDEO_RECORDING"}:
         if device.camera_privacy_state == "PAUSED_BY_DEVICE_USER":
             log_audit(db, user_id=current_user.id, device_id=device.id, action="REMOTE_CAMERA_REQUEST_REJECTED",
                       resource=f"device:{device.id}:camera",
@@ -193,15 +195,15 @@ def get_pending_commands_for_device(
     for cmd in all_pending:
         # Check if sensor was paused after command was dispatched (Stale Race Condition Prevention)
         is_invalid = False
-        if cmd.command_type in {"START_CAMERA_STREAM", "SWITCH_CAMERA", "CAPTURE_SNAPSHOT"} and device.camera_privacy_state == "PAUSED_BY_DEVICE_USER":
+        if cmd.command_type in {"START_CAMERA_STREAM", "SWITCH_CAMERA", "CAPTURE_SNAPSHOT", "START_VIDEO_RECORDING"} and device.camera_privacy_state == "PAUSED_BY_DEVICE_USER":
             is_invalid = True
-        elif cmd.command_type in {"START_VOICE_CALL"} and (device.microphone_privacy_state == "PAUSED_BY_DEVICE_USER" or device.speaker_privacy_state == "PAUSED_BY_DEVICE_USER"):
+        elif cmd.command_type in {"START_VOICE_CALL", "START_VIDEO_RECORDING"} and (device.microphone_privacy_state == "PAUSED_BY_DEVICE_USER" or device.speaker_privacy_state == "PAUSED_BY_DEVICE_USER"):
             is_invalid = True
         elif cmd.command_type in {"PLAY_ALARM", "SPEAK_TEXT"} and device.speaker_privacy_state == "PAUSED_BY_DEVICE_USER":
             is_invalid = True
         elif cmd.command_type in {"LOCATE_NOW", "HIGH_ACCURACY_MODE", "FORCE_SYNC"} and device.location_privacy_state == "PAUSED_BY_DEVICE_USER":
             is_invalid = True
-        elif device.remote_controls_state == "RESTRICTED" and cmd.command_type not in {"STOP_ALARM", "STOP_CAMERA_STREAM", "END_VOICE_CALL"}:
+        elif device.remote_controls_state == "RESTRICTED" and cmd.command_type not in {"STOP_ALARM", "STOP_CAMERA_STREAM", "END_VOICE_CALL", "STOP_VIDEO_RECORDING"}:
             is_invalid = True
 
         if is_invalid:

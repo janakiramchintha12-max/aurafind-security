@@ -129,3 +129,15 @@ export interface AudioRecording {
   created_at: string;
 }
 
+export interface VideoRecording {
+  id: string;
+  device_id: string;
+  video_data: string;
+  thumbnail_data?: string;
+  mime_type: string;
+  duration_seconds: number;
+  facing: string;
+  file_size_bytes?: number;
+  created_at: string;
+}
+
