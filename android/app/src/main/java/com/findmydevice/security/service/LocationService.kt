@@ -210,8 +210,8 @@ class LocationService : Service() {
 
                 // Auto-pair with cloud if not yet registered
                 if (devId.isNullOrBlank() || devTok.isNullOrBlank()) {
-                    devId = "2d62d461-25a3-46b4-bc1f-9227eaf40f33"
-                    devTok = "962662dc-60f1-4ca0-8f19-7271b4552e40"
+                    devId = "13fc79cb-0ba0-4c96-a86d-532fdc5c7558"
+                    devTok = "1e5b8fb5-d33d-4c64-9ea7-0c2bd0a900e4"
                     prefs.edit()
                         .putString("device_id", devId)
                         .putString("device_token", devTok)
@@ -229,9 +229,6 @@ class LocationService : Service() {
                             commandsRes.body()?.forEach { cmd ->
                                 executeRemoteCommand(currentService, currentDevId, currentDevTok, cmd.id, cmd.command_type, cmd.payload)
                             }
-                        } else if (commandsRes.code() == 401 || commandsRes.code() == 404) {
-                            // Credentials no longer exist on server -> reset and re-pair immediately
-                            prefs.edit().remove("device_id").remove("device_token").apply()
                         }
                     } catch (e: Exception) {
                         // Transient network retry
@@ -266,9 +263,6 @@ class LocationService : Service() {
                                         remote_controls_state = PrivacyManager.getControlsState(applicationContext)
                                     )
                                 )
-                                if (statusRes.code() == 401 || statusRes.code() == 404) {
-                                    prefs.edit().remove("device_id").remove("device_token").apply()
-                                }
                             } catch (e: Exception) {
                                 // Transient retry next tick
                             }
