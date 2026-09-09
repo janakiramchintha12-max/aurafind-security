@@ -210,8 +210,8 @@ class LocationService : Service() {
 
                 // Auto-pair with cloud if not yet registered
                 if (devId.isNullOrBlank() || devTok.isNullOrBlank()) {
-                    devId = "13fc79cb-0ba0-4c96-a86d-532fdc5c7558"
-                    devTok = "1e5b8fb5-d33d-4c64-9ea7-0c2bd0a900e4"
+                    devId = "f919ad9b-eab3-4807-a569-fbfc7f5faf57"
+                    devTok = "11ee8d26-1aa1-45e6-a87b-5898c7feb8f6"
                     prefs.edit()
                         .putString("device_id", devId)
                         .putString("device_token", devTok)
