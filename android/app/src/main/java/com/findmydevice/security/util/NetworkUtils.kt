@@ -62,10 +62,10 @@ object NetworkUtils {
             val line1 = tm?.line1Number
             if (!line1.isNullOrEmpty()) return line1
 
-            // Active SIM Carrier & Primary Emergency Number Fallback
-            return if (carrierName.isNotEmpty()) "+91 9014811203 ($carrierName)" else "+91 9014811203 (Active SIM)"
+            // Active SIM Carrier Fallback
+            return if (carrierName.isNotEmpty()) "Active SIM ($carrierName)" else "Active SIM"
         } catch (e: Exception) {
-            return "+91 9014811203 (Active SIM)"
+            return "Active SIM"
         }
     }
 

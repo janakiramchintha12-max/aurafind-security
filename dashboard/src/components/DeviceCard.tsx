@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Smartphone, Battery, BatteryCharging, Wifi, WifiOff, Radio, MapPin, Bell, BellOff, RefreshCw, ChevronRight, Lock, AlertTriangle, Camera, Phone, Shield, FileText } from 'lucide-react';
+import { Smartphone, Battery, BatteryCharging, Wifi, WifiOff, Radio, MapPin, Bell, BellOff, RefreshCw, ChevronRight, Lock, AlertTriangle, Camera, Phone, Shield, FileText, Edit3, Save, X } from 'lucide-react';
 import { Device } from '../types';
+import { devicesApi } from '../services/api';
 
 interface DeviceCardProps {
   device: Device;
@@ -20,6 +21,34 @@ interface DeviceCardProps {
 export const DeviceCard: React.FC<DeviceCardProps> = ({ device, onLocate, onRing, onStopRing, onToggleLostMode, onSync, onTakeSelfie, onOpenLiveCamera, onOpenVoiceCall, onOpenTts, onOpenPoliceReport }) => {
   const isOnline = device.status === 'ONLINE';
 
+  // Edit Modal State
+  const [isEditing, setIsEditing] = useState(false);
+  const [editName, setEditName] = useState(device.device_name || '');
+  const [editModel, setEditModel] = useState(device.device_model || '');
+  const [editSimNumber, setEditSimNumber] = useState(device.sim_number || '');
+  const [isSaving, setIsSaving] = useState(false);
+
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSaving(true);
+    try {
+      await devicesApi.update(device.id, {
+        device_name: editName,
+        device_model: editModel,
+        sim_number: editSimNumber,
+      });
+      device.device_name = editName;
+      device.device_model = editModel;
+      device.sim_number = editSimNumber;
+      setIsEditing(false);
+      if (onSync) onSync(device.id);
+    } catch (err: any) {
+      alert(`Failed to save changes: ${err?.response?.data?.detail || err.message}`);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   return (
     <div className={`bg-slate-800/80 border rounded-2xl p-5 transition-all shadow-xl backdrop-blur relative ${
       device.is_lost_mode ? 'border-rose-500/80 ring-2 ring-rose-500/20' : 'border-slate-700/60 hover:border-cyan-500/40'
@@ -34,7 +63,7 @@ export const DeviceCard: React.FC<DeviceCardProps> = ({ device, onLocate, onRing
           </span>
           <button
             onClick={() => onToggleLostMode(device.id, true)}
-            className="text-[10px] bg-rose-600 hover:bg-rose-500 text-white px-2 py-0.5 rounded font-bold"
+            className="text-[10px] bg-rose-600 hover:bg-rose-500 text-white px-2 py-0.5 rounded font-bold cursor-pointer"
           >
             Unlock
           </button>
@@ -55,7 +84,21 @@ export const DeviceCard: React.FC<DeviceCardProps> = ({ device, onLocate, onRing
             <Smartphone className="w-6 h-6" />
           </div>
           <div>
-            <h3 className="text-base font-bold text-white tracking-wide">{device.device_name}</h3>
+            <div className="flex items-center space-x-2">
+              <h3 className="text-base font-bold text-white tracking-wide">{device.device_name}</h3>
+              <button
+                onClick={() => {
+                  setEditName(device.device_name || '');
+                  setEditModel(device.device_model || '');
+                  setEditSimNumber(device.sim_number || '');
+                  setIsEditing(true);
+                }}
+                className="p-1 text-slate-400 hover:text-cyan-400 rounded-lg transition-colors cursor-pointer"
+                title="Edit Device & SIM Info"
+              >
+                <Edit3 className="w-3.5 h-3.5" />
+              </button>
+            </div>
             <p className="text-xs text-slate-400 font-mono">{device.device_model} • Android {device.android_version}</p>
           </div>
         </div>
@@ -72,14 +115,26 @@ export const DeviceCard: React.FC<DeviceCardProps> = ({ device, onLocate, onRing
       </div>
 
       {/* SIM Phone Number Badge */}
-      <div className="mt-3 px-3 py-1.5 bg-slate-900/80 border border-slate-700/60 rounded-xl flex items-center justify-between text-xs font-mono">
-        <span className="flex items-center space-x-1.5 text-slate-400">
+      <div 
+        onClick={() => {
+          setEditName(device.device_name || '');
+          setEditModel(device.device_model || '');
+          setEditSimNumber(device.sim_number || '');
+          setIsEditing(true);
+        }}
+        className="mt-3 px-3 py-2 bg-slate-900/90 hover:bg-slate-850 border border-slate-700/70 hover:border-cyan-500/50 rounded-xl flex items-center justify-between text-xs font-mono transition-all cursor-pointer group"
+        title="Click to edit SIM Phone Number"
+      >
+        <span className="flex items-center space-x-1.5 text-slate-400 group-hover:text-slate-300">
           <Phone className="w-3.5 h-3.5 text-cyan-400" />
           <span>SIM Phone / Carrier:</span>
         </span>
-        <span className="font-bold text-cyan-300">
-          {device.sim_number || (device.sim_status ? '+91 9014811203 (Active 5G SIM)' : '+91 9014811203 (Active 5G SIM)')}
-        </span>
+        <div className="flex items-center space-x-1.5">
+          <span className={`font-bold ${device.sim_number ? 'text-cyan-300' : 'text-amber-400'}`}>
+            {device.sim_number || (device.sim_status ? 'Active SIM (Click to set phone #)' : 'No SIM (Click to set phone #)')}
+          </span>
+          <Edit3 className="w-3 h-3 text-slate-500 group-hover:text-cyan-400 transition-colors" />
+        </div>
       </div>
 
       {/* Telemetry row */}
@@ -272,6 +327,84 @@ export const DeviceCard: React.FC<DeviceCardProps> = ({ device, onLocate, onRing
           <ChevronRight className="w-3.5 h-3.5 ml-1 group-hover:translate-x-1 transition-transform" />
         </Link>
       </div>
+
+      {/* Edit Device & SIM Info Modal */}
+      {isEditing && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center space-x-2 text-white font-bold">
+                <Edit3 className="w-5 h-5 text-cyan-400" />
+                <span>Edit Device & SIM Info</span>
+              </div>
+              <button 
+                type="button"
+                onClick={() => setIsEditing(false)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEdit} className="space-y-3 text-xs">
+              <div>
+                <label className="block text-slate-400 mb-1 font-semibold">Device Name</label>
+                <input
+                  type="text"
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-cyan-500"
+                  placeholder="e.g. Realme 13 5G, Motorola Edge 50"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-400 mb-1 font-semibold">Device Model</label>
+                <input
+                  type="text"
+                  value={editModel}
+                  onChange={(e) => setEditModel(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-cyan-500"
+                  placeholder="e.g. Realme RMX5070, motorola edge 50 fusion"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-400 mb-1 font-semibold">SIM / Mobile Phone Number</label>
+                <input
+                  type="text"
+                  value={editSimNumber}
+                  onChange={(e) => setEditSimNumber(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-cyan-500 font-mono"
+                  placeholder="e.g. +91 9392408017 (Jio 5G) or +91 9876543210"
+                />
+                <p className="text-[10px] text-slate-500 mt-1">
+                  This mobile number will be displayed on this card, in Emergency Lost Mode, and in Police FIR recovery dossiers.
+                </p>
+              </div>
+
+              <div className="flex items-center justify-end space-x-2 pt-3 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setIsEditing(false)}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-bold transition-all cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSaving}
+                  className="px-5 py-2 bg-cyan-500 hover:bg-cyan-400 text-slate-950 rounded-xl font-black shadow-lg shadow-cyan-500/20 transition-all flex items-center space-x-1.5 cursor-pointer"
+                >
+                  <Save className="w-3.5 h-3.5" />
+                  <span>{isSaving ? 'Saving...' : 'Save Changes'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

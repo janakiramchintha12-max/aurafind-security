@@ -61,6 +61,9 @@ class DeviceStatusUpdate(BaseModel):
 
 class DeviceUpdate(BaseModel):
     device_name: Optional[str] = None
+    device_model: Optional[str] = None
+    sim_number: Optional[str] = None
+    sim_status: Optional[bool] = None
     tracking_mode: Optional[str] = None
     is_tracking_enabled: Optional[bool] = None
     is_lost_mode: Optional[bool] = None

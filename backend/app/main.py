@@ -66,7 +66,7 @@ def seed_default_admin():
                 network_type="CELLULAR",
                 wifi_status=False,
                 sim_status=True,
-                sim_number="+91 9014811203 (Airtel 5G)",
+                sim_number=None,
                 gps_status=True,
                 last_latitude=14.0413359,
                 last_longitude=79.2624539,
@@ -75,8 +75,6 @@ def seed_default_admin():
             )
             db.add(realme_device)
         else:
-            realme_device.sim_status = True
-            realme_device.sim_number = "+91 9014811203 (Airtel 5G)"
             realme_device.gps_status = True
             realme_device.status = "ONLINE"
             realme_device.last_sync_time = datetime.now(timezone.utc)
@@ -99,7 +97,7 @@ def seed_default_admin():
                 network_type="WIFI",
                 wifi_status=True,
                 sim_status=True,
-                sim_number="+91 9014811203 (Jio 5G)",
+                sim_number=None,
                 gps_status=True,
                 last_latitude=14.566613,
                 last_longitude=78.745297,
@@ -108,8 +106,6 @@ def seed_default_admin():
             )
             db.add(moto_device)
         else:
-            moto_device.sim_status = True
-            moto_device.sim_number = "+91 9014811203 (Jio 5G)"
             moto_device.gps_status = True
             moto_device.status = "ONLINE"
             moto_device.last_sync_time = datetime.now(timezone.utc)

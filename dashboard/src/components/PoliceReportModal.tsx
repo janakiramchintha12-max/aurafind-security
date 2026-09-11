@@ -77,7 +77,7 @@ export const PoliceReportModal: React.FC<PoliceReportModalProps> = ({ device, sn
                 <div className="text-slate-500 text-[10px]">DEVICE HARDWARE UUID</div>
                 <div className="font-bold text-slate-900 break-all">{device.id}</div>
                 <div className="text-slate-500 text-[10px] mt-2">LINKED SIM / PHONE NUMBER</div>
-                <div className="font-bold text-slate-900">{device.sim_number || '+919392408017'}</div>
+                <div className="font-bold text-slate-900">{device.sim_number || 'Not Registered (Active SIM)'}</div>
               </div>
             </div>
           </div>

@@ -42,8 +42,8 @@ class LostModeOverlayActivity : ComponentActivity() {
             WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
         )
 
-        val emergencyNumber = intent.getStringExtra("EMERGENCY_NUMBER") ?: "9014811203"
-        val customMsg = intent.getStringExtra("LOST_MSG") ?: "This phone is reported lost."
+        val emergencyNumber = intent.getStringExtra("EMERGENCY_NUMBER")?.ifBlank { null } ?: "Owner Contact"
+        val customMsg = intent.getStringExtra("LOST_MSG") ?: "This phone is reported lost. Please contact the owner."
 
         setContent {
             LostModeScreen(

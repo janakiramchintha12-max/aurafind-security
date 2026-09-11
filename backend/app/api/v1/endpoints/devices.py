@@ -77,10 +77,20 @@ def update_device(
 ):
     if device_in.device_name is not None:
         device.device_name = device_in.device_name
+    if device_in.device_model is not None:
+        device.device_model = device_in.device_model
+    if device_in.sim_number is not None:
+        device.sim_number = device_in.sim_number
+    if device_in.sim_status is not None:
+        device.sim_status = device_in.sim_status
     if device_in.tracking_mode is not None:
         device.tracking_mode = device_in.tracking_mode
     if device_in.is_tracking_enabled is not None:
         device.is_tracking_enabled = device_in.is_tracking_enabled
+    if device_in.is_lost_mode is not None:
+        device.is_lost_mode = device_in.is_lost_mode
+    if device_in.lost_mode_message is not None:
+        device.lost_mode_message = device_in.lost_mode_message
     
     device.updated_at = datetime.now(timezone.utc)
     db.commit()

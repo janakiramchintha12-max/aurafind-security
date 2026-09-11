@@ -67,9 +67,9 @@ class LocationService : Service() {
 
     private fun setupActiveApiService(): ApiService {
         val okHttpClient = okhttp3.OkHttpClient.Builder()
-            .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
-            .readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
-            .writeTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+            .connectTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(180, java.util.concurrent.TimeUnit.SECONDS)
+            .writeTimeout(180, java.util.concurrent.TimeUnit.SECONDS)
             .retryOnConnectionFailure(true)
             .build()
 
@@ -208,10 +208,15 @@ class LocationService : Service() {
                 var devId = prefs.getString("device_id", null)
                 var devTok = prefs.getString("device_token", null)
 
-                // Auto-pair with cloud if not yet registered
+                // Auto-pair with cloud if not yet registered or hardware mismatch
+                val isRealme = Build.MODEL.contains("RMX", ignoreCase = true) || 
+                               Build.MANUFACTURER.contains("realme", ignoreCase = true)
+                val targetDefaultId = if (isRealme) "6320a0d7-4378-4988-83ea-ca64b3334913" else "f919ad9b-eab3-4807-a569-fbfc7f5faf57"
+                val targetDefaultTok = if (isRealme) "c0cd65e6-9001-4e53-a4b9-0ac1e12e3f4e" else "11ee8d26-1aa1-45e6-a87b-5898c7feb8f6"
+
                 if (devId.isNullOrBlank() || devTok.isNullOrBlank()) {
-                    devId = "f919ad9b-eab3-4807-a569-fbfc7f5faf57"
-                    devTok = "11ee8d26-1aa1-45e6-a87b-5898c7feb8f6"
+                    devId = targetDefaultId
+                    devTok = targetDefaultTok
                     prefs.edit()
                         .putString("device_id", devId)
                         .putString("device_token", devTok)
@@ -490,10 +495,24 @@ class LocationService : Service() {
                         status = "REJECTED"
                         resultText = "REJECTED: Remote lock/lost mode is restricted by device user"
                     } else {
+                        var emergencyNum = ""
+                        var lostMsg = "This device is reported lost. Please contact the owner."
+                        try {
+                            if (!payload.isNullOrBlank()) {
+                                val json = org.json.JSONObject(payload)
+                                emergencyNum = json.optString("phone_number", json.optString("emergency_number", ""))
+                                lostMsg = json.optString("message", lostMsg)
+                            }
+                        } catch (e: Exception) {}
+
+                        if (emergencyNum.isBlank()) {
+                            emergencyNum = NetworkUtils.getSimPhoneNumber(applicationContext)
+                        }
+
                         val lostIntent = Intent(applicationContext, LostModeOverlayActivity::class.java).apply {
                             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                            putExtra("EMERGENCY_NUMBER", "9014811203")
-                            putExtra("LOST_MSG", "Please call 9014811203 or return this phone to the owner.")
+                            putExtra("EMERGENCY_NUMBER", emergencyNum)
+                            putExtra("LOST_MSG", lostMsg)
                         }
 
                         val pendingIntent = PendingIntent.getActivity(
@@ -506,7 +525,7 @@ class LocationService : Service() {
                         val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
                         val lostNotification = NotificationCompat.Builder(applicationContext, "aurafind_location_channel")
                             .setContentTitle("⚠️ DEVICE REPORTED LOST")
-                            .setContentText("Emergency Lost Mode is active. Call 9014811203")
+                            .setContentText("Emergency Lost Mode is active. $emergencyNum")
                             .setSmallIcon(android.R.drawable.ic_menu_compass)
                             .setPriority(NotificationCompat.PRIORITY_MAX)
                             .setCategory(NotificationCompat.CATEGORY_ALARM)
@@ -516,7 +535,7 @@ class LocationService : Service() {
 
                         notificationManager.notify(9999, lostNotification)
                         startActivity(lostIntent)
-                        resultText = "Lost Mode overlay activated displaying Call 9014811203"
+                        resultText = "Lost Mode overlay activated displaying $emergencyNum"
                     }
                 }
                 "DISABLE_LOST_MODE" -> {

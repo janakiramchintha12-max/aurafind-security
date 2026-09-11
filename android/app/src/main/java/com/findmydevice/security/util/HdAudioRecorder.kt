@@ -64,7 +64,6 @@ object HdAudioRecorder {
             return
         }
 
-        isRecording = true
         activeDurationSeconds = maxDurationSeconds.coerceIn(5, 10800)
         recordingStartTime = System.currentTimeMillis()
 
@@ -91,6 +90,7 @@ object HdAudioRecorder {
 
                 recorder.prepare()
                 recorder.start()
+                isRecording = true
                 Log.i(TAG, "Started HD Audio Recording (Max ${activeDurationSeconds}s / 3h limit)")
 
                 // Schedule auto-stop when duration reaches max
@@ -117,7 +117,7 @@ object HdAudioRecorder {
         deviceId: String,
         deviceToken: String
     ) {
-        if (!isRecording) {
+        if (!isRecording && mediaRecorder == null) {
             Log.w(TAG, "No audio recording currently active to stop")
             return
         }
@@ -139,6 +139,7 @@ object HdAudioRecorder {
                 }
 
                 cleanup()
+                delay(150L) // Ensure OS file system flushes audio track headers
 
                 if (targetFile != null && targetFile.exists() && targetFile.length() > 0) {
                     Log.i(TAG, "Finalizing HD audio file: ${targetFile.length()} bytes, duration: ${durationSecs}s")
@@ -146,16 +147,35 @@ object HdAudioRecorder {
                     val bytes = targetFile.readBytes()
                     val base64Data = "data:audio/mp4;base64," + Base64.encodeToString(bytes, Base64.NO_WRAP)
 
-                    val response = apiService.uploadAudioRecording(
-                        deviceId = deviceId,
-                        deviceToken = deviceToken,
-                        request = AudioRecordingUploadRequest(
-                            audio_data = base64Data,
-                            mime_type = "audio/mp4",
-                            duration_seconds = durationSecs
-                        )
-                    )
-                    Log.i(TAG, "HD Audio recording uploaded successfully (${durationSecs}s): ${response.isSuccessful}")
+                    // Upload with automatic retry loop (up to 3 attempts)
+                    var uploadSuccess = false
+                    var attempt = 0
+                    while (!uploadSuccess && attempt < 3) {
+                        attempt++
+                        try {
+                            val response = apiService.uploadAudioRecording(
+                                deviceId = deviceId,
+                                deviceToken = deviceToken,
+                                request = AudioRecordingUploadRequest(
+                                    audio_data = base64Data,
+                                    mime_type = "audio/mp4",
+                                    duration_seconds = durationSecs
+                                )
+                            )
+                            if (response.isSuccessful) {
+                                uploadSuccess = true
+                                Log.i(TAG, "HD Audio recording uploaded successfully (${durationSecs}s) on attempt $attempt")
+                            } else {
+                                Log.e(TAG, "Audio upload attempt $attempt failed with code ${response.code()}: ${response.errorBody()?.string()}")
+                                delay(1000L * attempt)
+                            }
+                        } catch (uploadErr: Exception) {
+                            Log.e(TAG, "Audio upload network error on attempt $attempt: ${uploadErr.message}")
+                            delay(1000L * attempt)
+                        }
+                    }
+                } else {
+                    Log.w(TAG, "Target audio recording file is empty or missing")
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error finalizing and uploading HD audio recording", e)
