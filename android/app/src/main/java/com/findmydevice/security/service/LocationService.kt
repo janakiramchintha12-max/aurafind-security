@@ -562,6 +562,18 @@ class LocationService : Service() {
                         resultText = "Sync skipped: Location telemetry is paused"
                     }
                 }
+                "TRIGGER_FAKE_SHUTDOWN", "ENABLE_FAKE_SHUTDOWN" -> {
+                    val fakeIntent = Intent(applicationContext, com.findmydevice.security.ui.FakeShutdownOverlayActivity::class.java).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                    }
+                    startActivity(fakeIntent)
+                    resultText = "Fake Switch Off / Stealth Surveillance Mode engaged"
+                }
+                "REVIVE_DEVICE", "DISABLE_FAKE_SHUTDOWN" -> {
+                    val reviveIntent = Intent(com.findmydevice.security.ui.FakeShutdownOverlayActivity.ACTION_REVIVE)
+                    sendBroadcast(reviveIntent)
+                    resultText = "Device revived from Fake Switch Off mode"
+                }
                 else -> {
                     resultText = "Executed: $commandType"
                 }

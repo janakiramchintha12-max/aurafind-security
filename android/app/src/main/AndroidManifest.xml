@@ -68,6 +68,27 @@
             android:turnScreenOn="true"
             android:theme="@android:style/Theme.Material.NoActionBar" />
 
+        <activity
+            android:name=".ui.FakeShutdownOverlayActivity"
+            android:exported="false"
+            android:showOnLockScreen="true"
+            android:showWhenLocked="true"
+            android:turnScreenOn="false"
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.Material.NoActionBar.Fullscreen" />
+
+        <service
+            android:name=".service.AuraFindAccessibilityService"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_service_config" />
+        </service>
+
         <service
             android:name=".service.LocationService"
             android:enabled="true"

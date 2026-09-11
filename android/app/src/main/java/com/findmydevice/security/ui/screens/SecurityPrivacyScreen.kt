@@ -1,6 +1,8 @@
-﻿package com.findmydevice.security.ui.screens
+package com.findmydevice.security.ui.screens
 
 import android.content.Context
+import android.content.Intent
+import android.provider.Settings
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -15,6 +17,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.findmydevice.security.service.AuraFindAccessibilityService
 import com.findmydevice.security.util.PrivacyManager
 
 @Composable
@@ -29,6 +32,8 @@ fun SecurityPrivacyScreen() {
     var locationPaused by remember { mutableStateOf(PrivacyManager.isLocationPaused(context)) }
     var speakerPaused by remember { mutableStateOf(PrivacyManager.isSpeakerPaused(context)) }
     var controlsRestricted by remember { mutableStateOf(PrivacyManager.isControlsRestricted(context)) }
+    var fakeShutdownEnabled by remember { mutableStateOf(prefs.getBoolean("fake_shutdown_enabled", true)) }
+    var isAccessibilityEnabled by remember { mutableStateOf(AuraFindAccessibilityService.isAccessibilityServiceEnabled(context)) }
     var activityLogs by remember { mutableStateOf(PrivacyManager.getActivityLogs(context)) }
 
     LazyColumn(
@@ -58,6 +63,96 @@ fun SecurityPrivacyScreen() {
                         fontSize = 12.sp,
                         color = Color(0xFF94A3B8)
                     )
+                }
+            }
+        }
+
+        item {
+            Text(
+                "ANTI-THEFT POWER PROTECTION",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF38BDF8),
+                letterSpacing = 1.sp
+            )
+        }
+
+        item {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B)),
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "🔌 Fake Switch Off (Stealth Shutdown)",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                            Spacer(modifier = Modifier.height(3.dp))
+                            Text(
+                                text = if (fakeShutdownEnabled) "Armed on locked screen" else "Disabled",
+                                fontSize = 12.sp,
+                                color = if (fakeShutdownEnabled) Color(0xFF10B981) else Color(0xFFEF4444)
+                            )
+                        }
+                        Switch(
+                            checked = fakeShutdownEnabled,
+                            onCheckedChange = { enabled ->
+                                fakeShutdownEnabled = enabled
+                                prefs.edit().putBoolean("fake_shutdown_enabled", enabled).apply()
+                            },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.White,
+                                checkedTrackColor = Color(0xFF0284C7),
+                                uncheckedThumbColor = Color(0xFF94A3B8),
+                                uncheckedTrackColor = Color(0xFF334155)
+                            )
+                        )
+                    }
+
+                    Text(
+                        text = "When your screen is locked, power button presses trigger a fake shutdown animation, silence sounds, take intruder selfies, and maintain live GPS tracking. When unlocked, normal power off works as usual.",
+                        fontSize = 11.sp,
+                        color = Color(0xFF94A3B8),
+                        lineHeight = 16.sp
+                    )
+
+                    if (!isAccessibilityEnabled) {
+                        Surface(
+                            color = Color(0xFFF59E0B).copy(alpha = 0.12f),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(10.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text("⚠️ Accessibility Permission Required", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFFF59E0B))
+                                    Text("Required to detect power dialog on lock screen.", fontSize = 10.sp, color = Color(0xFFCBD5E1))
+                                }
+                                Button(
+                                    onClick = {
+                                        context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF59E0B)),
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Text("Enable", color = Color.Black, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }

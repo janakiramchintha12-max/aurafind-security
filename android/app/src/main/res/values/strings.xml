@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">AuraFind Security</string>
+    <string name="accessibility_service_description">AuraFind Anti-Theft Guard protects your device against unauthorized shutdowns while locked. When enabled, power button presses on a locked phone trigger stealth tracking mode.</string>
+</resources>
