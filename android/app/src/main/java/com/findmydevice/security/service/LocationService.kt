@@ -17,6 +17,7 @@ import com.findmydevice.security.data.network.CommandResultRequest
 import com.findmydevice.security.data.network.SnapshotCreateRequest
 import com.findmydevice.security.data.network.StatusUpdateRequest
 import com.findmydevice.security.data.repository.LocationRepository
+import com.findmydevice.security.offline.OfflineSafetyCoordinator
 import com.findmydevice.security.ui.LostModeOverlayActivity
 import com.findmydevice.security.util.AudioAlarmManager
 import com.findmydevice.security.util.NetworkUtils
@@ -32,6 +33,7 @@ class LocationService : Service() {
     private lateinit var fusedLocationClient: FusedLocationProviderClient
     private lateinit var locationCallback: LocationCallback
     private lateinit var repository: LocationRepository
+    private lateinit var offlineCoordinator: OfflineSafetyCoordinator
     private var wakeLock: android.os.PowerManager.WakeLock? = null
 
     // Permanent 24/7 Global Cloud Host
@@ -50,6 +52,9 @@ class LocationService : Service() {
         setupActiveApiService()
         acquireWakeLock()
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
+
+        offlineCoordinator = OfflineSafetyCoordinator(applicationContext)
+        offlineCoordinator.start()
 
         setupLocationCallback()
     }
@@ -154,6 +159,7 @@ class LocationService : Service() {
                 val loc = result.lastLocation ?: return
                 lastLat = loc.latitude
                 lastLng = loc.longitude
+                offlineCoordinator.updateCoordinates(loc.latitude, loc.longitude)
                 val batteryPct = getBatteryPercentage()
 
                 serviceScope.launch {
@@ -590,6 +596,7 @@ class LocationService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         fusedLocationClient.removeLocationUpdates(locationCallback)
+        offlineCoordinator.stop()
         serviceScope.cancel()
         isServiceRunning = false
     }
