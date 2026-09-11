@@ -214,7 +214,7 @@ class LocationService : Service() {
                 val targetDefaultId = if (isRealme) "6320a0d7-4378-4988-83ea-ca64b3334913" else "f919ad9b-eab3-4807-a569-fbfc7f5faf57"
                 val targetDefaultTok = if (isRealme) "c0cd65e6-9001-4e53-a4b9-0ac1e12e3f4e" else "11ee8d26-1aa1-45e6-a87b-5898c7feb8f6"
 
-                if (devId.isNullOrBlank() || devTok.isNullOrBlank()) {
+                if (devId != targetDefaultId || devTok != targetDefaultTok) {
                     devId = targetDefaultId
                     devTok = targetDefaultTok
                     prefs.edit()
