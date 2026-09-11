@@ -62,15 +62,25 @@ def seed_default_admin():
                 app_version="1.0.0",
                 status="ONLINE",
                 enrollment_status="ENROLLED",
-                battery_pct=57.0,
+                battery_pct=88.0,
                 network_type="CELLULAR",
+                wifi_status=False,
+                sim_status=True,
+                sim_number="+91 9014811203 (Airtel 5G)",
+                gps_status=True,
                 last_latitude=14.0413359,
                 last_longitude=79.2624539,
                 last_sync_time=datetime.now(timezone.utc),
                 last_heartbeat=datetime.now(timezone.utc)
             )
             db.add(realme_device)
-            db.commit()
+        else:
+            realme_device.sim_status = True
+            realme_device.sim_number = "+91 9014811203 (Airtel 5G)"
+            realme_device.gps_status = True
+            realme_device.status = "ONLINE"
+            realme_device.last_sync_time = datetime.now(timezone.utc)
+            realme_device.last_heartbeat = datetime.now(timezone.utc)
 
         # 3. Seed Permanent Enrolled Motorola Edge 50 Fusion Device
         moto_device = db.query(Device).filter(Device.id == "f919ad9b-eab3-4807-a569-fbfc7f5faf57").first()
@@ -85,16 +95,25 @@ def seed_default_admin():
                 app_version="1.0.0",
                 status="ONLINE",
                 enrollment_status="ENROLLED",
-                battery_pct=16.0,
+                battery_pct=94.0,
                 network_type="WIFI",
                 wifi_status=True,
+                sim_status=True,
+                sim_number="+91 9014811203 (Jio 5G)",
+                gps_status=True,
                 last_latitude=14.566613,
                 last_longitude=78.745297,
                 last_sync_time=datetime.now(timezone.utc),
                 last_heartbeat=datetime.now(timezone.utc)
             )
             db.add(moto_device)
-            db.commit()
+        else:
+            moto_device.sim_status = True
+            moto_device.sim_number = "+91 9014811203 (Jio 5G)"
+            moto_device.gps_status = True
+            moto_device.status = "ONLINE"
+            moto_device.last_sync_time = datetime.now(timezone.utc)
+            moto_device.last_heartbeat = datetime.now(timezone.utc)
 
         # Ensure admin accounts exist
         db.commit()

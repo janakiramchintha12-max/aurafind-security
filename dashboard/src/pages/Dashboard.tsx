@@ -35,7 +35,12 @@ export const DashboardPage: React.FC = () => {
   useEffect(() => {
     fetchDevices();
 
-    const cleanup = connectWebSocket((eventData) => {
+    // Live auto-polling every 3 seconds to keep all numbers and telemetry fresh
+    const pollInterval = setInterval(() => {
+      fetchDevices();
+    }, 3000);
+
+    const cleanupWs = connectWebSocket((eventData) => {
       if (eventData.event === 'DEVICE_STATUS_UPDATE' || eventData.event === 'NEW_LOCATION' || eventData.event === 'OFFLINE_LOCATIONS_SYNCED') {
         fetchDevices();
         if (eventData.event === 'OFFLINE_LOCATIONS_SYNCED') {
@@ -47,7 +52,10 @@ export const DashboardPage: React.FC = () => {
       }
     });
 
-    return () => cleanup();
+    return () => {
+      clearInterval(pollInterval);
+      cleanupWs();
+    };
   }, []);
 
   const handleLocate = async (id: string) => {
