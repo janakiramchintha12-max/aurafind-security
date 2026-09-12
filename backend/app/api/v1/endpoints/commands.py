@@ -36,7 +36,15 @@ ALLOWED_COMMAND_TYPES = {
     "STOP_AUDIO_RECORDING",
     "STOP_AUDIO_CLIP",
     "START_VIDEO_RECORDING",
-    "STOP_VIDEO_RECORDING"
+    "STOP_VIDEO_RECORDING",
+    "START_SCREEN_MIRROR",
+    "STOP_SCREEN_MIRROR",
+    "START_SCREEN_STREAM",
+    "STOP_SCREEN_STREAM",
+    "FETCH_APP_USAGE",
+    "SYNC_APP_USAGE",
+    "TRIGGER_FAKE_SHUTDOWN",
+    "REVIVE_DEVICE"
 }
 
 @router.post("/{device_id}/commands", response_model=CommandResponse, status_code=status.HTTP_201_CREATED)

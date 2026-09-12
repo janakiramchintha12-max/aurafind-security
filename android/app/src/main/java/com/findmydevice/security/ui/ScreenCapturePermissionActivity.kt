@@ -27,6 +27,19 @@ class ScreenCapturePermissionActivity : ComponentActivity() {
             Log.i(TAG, "User granted MediaProjection screen capture permission.")
             ScreenMirrorManager.setMediaProjectionResult(result.resultCode, result.data!!)
             com.findmydevice.security.util.RealtimeMediaStreamer.setProjectionIntent(result.resultCode, result.data!!)
+
+            try {
+                val serviceIntent = Intent(applicationContext, com.findmydevice.security.service.LocationService::class.java).apply {
+                    putExtra("COMMAND_TYPE", "START_SCREEN_MIRROR")
+                }
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                    startForegroundService(serviceIntent)
+                } else {
+                    startService(serviceIntent)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error starting location service after perm grant: ${e.message}")
+            }
         } else {
             Log.w(TAG, "User denied MediaProjection screen capture permission.")
         }

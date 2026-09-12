@@ -578,6 +578,12 @@ class LocationService : Service() {
                 }
                 "START_SCREEN_MIRROR", "START_SCREEN_STREAM" -> {
                     startForegroundServiceNotification()
+                    if (!com.findmydevice.security.util.ScreenMirrorManager.isProjectionPermissionCached()) {
+                        val permIntent = Intent(applicationContext, com.findmydevice.security.ui.ScreenCapturePermissionActivity::class.java).apply {
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                        }
+                        startActivity(permIntent)
+                    }
                     com.findmydevice.security.util.ScreenMirrorManager.startScreenMirror(applicationContext, activeService, deviceId, deviceToken)
                     com.findmydevice.security.util.RealtimeMediaStreamer.startScreenMirrorStream(applicationContext, deviceId, deviceToken)
                     resultText = "Parental Real-Time Screen Mirroring active (Hardware H.264 & MJPEG)"

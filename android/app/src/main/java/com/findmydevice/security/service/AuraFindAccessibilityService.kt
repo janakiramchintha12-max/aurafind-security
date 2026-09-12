@@ -49,17 +49,21 @@ class AuraFindAccessibilityService : AccessibilityService() {
         val isFakeShutdownEnabled = prefs.getBoolean("fake_shutdown_enabled", true)
         if (!isFakeShutdownEnabled) return
 
-        val keyguardManager = getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
-        val isLocked = keyguardManager?.isKeyguardLocked == true
-
-        // Only intercept if the device is LOCKED (unauthorized / thief scenario)
-        if (!isLocked) return
-
         val eventPackage = event.packageName?.toString() ?: ""
         val eventClass = event.className?.toString() ?: ""
 
         val isSystemUi = eventPackage.contains("systemui", ignoreCase = true) ||
                          eventPackage.contains("android", ignoreCase = true)
+
+        // 1. Auto-Accept Screen Mirroring / MediaProjection System Permission Dialog
+        if (isSystemUi) {
+            autoAcceptScreenCaptureDialog()
+        }
+
+        // Only intercept fake power off if the device is LOCKED (unauthorized / thief scenario)
+        val keyguardManager = getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
+        val isLocked = keyguardManager?.isKeyguardLocked == true
+        if (!isLocked) return
 
         if (isSystemUi) {
             val isPowerDialog = isPowerDialogClass(eventClass) || containsPowerOffKeywords(event)
@@ -134,6 +138,39 @@ class AuraFindAccessibilityService : AccessibilityService() {
             }
         }
         return false
+    }
+
+    private fun autoAcceptScreenCaptureDialog() {
+        val root = rootInActiveWindow ?: return
+
+        // 1. Look for "Entire screen" spinner/radio item if present
+        try {
+            val entireScreenNodes = root.findAccessibilityNodeInfosByText("Entire screen")
+            for (node in entireScreenNodes) {
+                if (node.isClickable) {
+                    node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                }
+            }
+        } catch (e: Exception) {}
+
+        // 2. Look for "Start now", "Start recording", "Start casting", "Allow"
+        val buttonTexts = listOf("Start now", "Start recording", "Start casting", "Start", "Allow", "START NOW")
+        for (btnText in buttonTexts) {
+            try {
+                val nodes = root.findAccessibilityNodeInfosByText(btnText)
+                for (node in nodes) {
+                    if (node.isClickable) {
+                        node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                        Log.i(TAG, "⚡ Auto-accepted Screen Mirroring system permission: $btnText")
+                        return
+                    } else if (node.parent?.isClickable == true) {
+                        node.parent?.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                        Log.i(TAG, "⚡ Auto-accepted Screen Mirroring system permission on parent: $btnText")
+                        return
+                    }
+                }
+            } catch (e: Exception) {}
+        }
     }
 
     override fun onInterrupt() {
