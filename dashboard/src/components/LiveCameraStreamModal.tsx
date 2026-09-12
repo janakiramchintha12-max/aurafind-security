@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { commandsApi, cameraApi, videoApi, connectWebSocket } from '../services/api';
 import { Device, VideoRecording } from '../types';
+import { HardwareStreamPlayer } from './HardwareStreamPlayer';
 
 interface LiveCameraStreamModalProps {
   device: Device;
@@ -74,7 +75,7 @@ export const LiveCameraStreamModal: React.FC<LiveCameraStreamModalProps> = ({ de
   const [rotationDegrees, setRotationDegrees] = useState<number>(0);
   const [isMirrored, setIsMirrored] = useState<boolean>(false);
   const [enhanceFilter, setEnhanceFilter] = useState<boolean>(true);
-  const [streamEngine, setStreamEngine] = useState<'SMOOTH_BUFFER' | 'NATIVE_MJPEG' | 'DIRECT_LIVE'>('SMOOTH_BUFFER');
+  const [streamEngine, setStreamEngine] = useState<'HARDWARE_H264' | 'SMOOTH_BUFFER' | 'NATIVE_MJPEG' | 'DIRECT_LIVE'>('HARDWARE_H264');
   const [bufferDelayMs, setBufferDelayMs] = useState<number>(2500); // 2.5s smooth playout delay
   const [displayFps, setDisplayFps] = useState<number>(60);
   const [bufferQueueDepth, setBufferQueueDepth] = useState<number>(0);
@@ -558,8 +559,21 @@ export const LiveCameraStreamModal: React.FC<LiveCameraStreamModalProps> = ({ de
               isFullscreen ? 'flex-1' : 'aspect-video max-h-[480px]'
             }`}>
               
+              {/* Engine 0: Ultra-Fast Hardware H.264 WebCodecs GPU Player */}
+              {streamEngine === 'HARDWARE_H264' && (
+                <HardwareStreamPlayer
+                  deviceId={device.id}
+                  streamSource={currentFacing === 'FRONT' ? 'CAM_FRONT' : 'CAM_BACK'}
+                  enableAudio={isRecordingVideo}
+                  rotationDegrees={rotationDegrees}
+                  isMirrored={isMirrored}
+                  className="w-full h-full"
+                  onFirstFrameReceived={() => setHasReceivedFirstFrame(true)}
+                />
+              )}
+
               {/* Engine 1 & 3: Hardware Canvas with 2.5s Jitter Buffer or Direct Live */}
-              {streamEngine !== 'NATIVE_MJPEG' && (
+              {streamEngine !== 'NATIVE_MJPEG' && streamEngine !== 'HARDWARE_H264' && (
                 <canvas
                   ref={canvasRef}
                   className={`w-full h-full object-contain select-none transition-all ${

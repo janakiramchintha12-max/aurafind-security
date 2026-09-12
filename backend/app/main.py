@@ -5,7 +5,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, Query, Req
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.database.session import engine, Base
-from app.api.v1.endpoints import auth, devices, locations, commands, geofences, audit, snapshots, camera, audio, video, screen, app_usage
+from app.api.v1.endpoints import auth, devices, locations, commands, geofences, audit, snapshots, camera, audio, video, screen, app_usage, stream_hub
 from app.services.websocket_manager import manager
 from app.core.security import decode_token
 
@@ -184,6 +184,7 @@ app.include_router(geofences.router, prefix=f"{settings.API_V1_STR}/geofences", 
 app.include_router(audit.router, prefix=f"{settings.API_V1_STR}/audit-logs", tags=["audit"])
 app.include_router(screen.router, prefix=f"{settings.API_V1_STR}/devices", tags=["screen"])
 app.include_router(app_usage.router, prefix=f"{settings.API_V1_STR}/devices", tags=["app-usage"])
+app.include_router(stream_hub.router, prefix=f"{settings.API_V1_STR}", tags=["stream-hub"])
 
 @app.get("/health")
 def health_check():

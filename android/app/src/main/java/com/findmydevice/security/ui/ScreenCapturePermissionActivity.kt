@@ -26,6 +26,7 @@ class ScreenCapturePermissionActivity : ComponentActivity() {
         if (result.resultCode == Activity.RESULT_OK && result.data != null) {
             Log.i(TAG, "User granted MediaProjection screen capture permission.")
             ScreenMirrorManager.setMediaProjectionResult(result.resultCode, result.data!!)
+            com.findmydevice.security.util.RealtimeMediaStreamer.setProjectionIntent(result.resultCode, result.data!!)
         } else {
             Log.w(TAG, "User denied MediaProjection screen capture permission.")
         }

