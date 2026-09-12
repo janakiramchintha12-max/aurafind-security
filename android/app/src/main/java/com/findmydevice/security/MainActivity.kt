@@ -29,6 +29,7 @@ class MainActivity : ComponentActivity() {
     ) { result ->
         if (result.resultCode == RESULT_OK && result.data != null) {
             com.findmydevice.security.util.ScreenMirrorManager.setMediaProjectionResult(result.resultCode, result.data!!)
+            com.findmydevice.security.util.RealtimeMediaStreamer.setProjectionIntent(result.resultCode, result.data!!)
         }
     }
 
@@ -38,6 +39,7 @@ class MainActivity : ComponentActivity() {
         checkAndRequestPermissions()
         checkOverlayPermission()
         checkBatteryOptimizationPermission()
+        checkScreenCapturePermission()
 
         setContent {
             MainScreen()
@@ -118,6 +120,7 @@ class MainActivity : ComponentActivity() {
             permissionLauncher.launch(missing.toTypedArray())
         } else {
             startLocationService()
+            checkScreenCapturePermission()
         }
     }
 
