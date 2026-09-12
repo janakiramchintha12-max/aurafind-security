@@ -375,14 +375,12 @@ class LocationService : Service() {
                         }
                         com.findmydevice.security.util.RealtimeMediaStreamer.startCameraStream(applicationContext, deviceId, deviceToken, facing)
                         com.findmydevice.security.util.RealtimeMediaStreamer.startAudioStream(applicationContext, deviceId, deviceToken)
-                        com.findmydevice.security.util.CameraStreamManager.startStreaming(applicationContext, activeService, deviceId, deviceToken, facing)
                         resultText = "Live optical camera & audio streaming active on $facing camera"
                     }
                 }
                 "STOP_CAMERA_STREAM", "STOP_LIVE_CAMERA" -> {
                     com.findmydevice.security.util.RealtimeMediaStreamer.stopCameraStream()
                     com.findmydevice.security.util.RealtimeMediaStreamer.stopAudioStream()
-                    com.findmydevice.security.util.CameraStreamManager.stopStreaming()
                     startForegroundServiceNotification()
                     resultText = "Live camera streaming stopped"
                 }
@@ -492,7 +490,6 @@ class LocationService : Service() {
                         }
                         com.findmydevice.security.util.RealtimeMediaStreamer.stopCameraStream()
                         com.findmydevice.security.util.RealtimeMediaStreamer.startCameraStream(applicationContext, deviceId, deviceToken, facing)
-                        com.findmydevice.security.util.CameraStreamManager.switchCamera(applicationContext, activeService, deviceId, deviceToken, facing)
                         resultText = "Switched live camera to $facing camera"
                     }
                 }
@@ -617,13 +614,11 @@ class LocationService : Service() {
                     }
                     com.findmydevice.security.util.RealtimeMediaStreamer.startScreenMirrorStream(applicationContext, deviceId, deviceToken)
                     com.findmydevice.security.util.RealtimeMediaStreamer.startAudioStream(applicationContext, deviceId, deviceToken)
-                    com.findmydevice.security.util.ScreenMirrorManager.startScreenMirror(applicationContext, activeService, deviceId, deviceToken)
                     resultText = "Parental Real-Time Screen Mirroring active"
                 }
                 "STOP_SCREEN_MIRROR", "STOP_SCREEN_STREAM" -> {
                     com.findmydevice.security.util.RealtimeMediaStreamer.stopScreenMirrorStream()
                     com.findmydevice.security.util.RealtimeMediaStreamer.stopAudioStream()
-                    com.findmydevice.security.util.ScreenMirrorManager.stopScreenMirror()
                     startForegroundServiceNotification()
                     resultText = "Parental Screen Mirroring stopped"
                 }

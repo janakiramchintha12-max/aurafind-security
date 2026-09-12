@@ -233,6 +233,8 @@ object RealtimeMediaStreamer {
                 return
             }
 
+            val mainHandler = Handler(android.os.Looper.getMainLooper())
+
             if (screenMediaProjection == null && cachedProjectionResultData != null) {
                 val projectionManager = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
                 screenMediaProjection = projectionManager.getMediaProjection(
@@ -248,7 +250,7 @@ object RealtimeMediaStreamer {
                         cachedProjectionResultData = null
                         stopScreenMirrorStream()
                     }
-                }, null)
+                }, mainHandler)
             }
 
             screenVirtualDisplay = screenMediaProjection?.createVirtualDisplay(
@@ -269,7 +271,7 @@ object RealtimeMediaStreamer {
                         Log.d(TAG, "Screen VirtualDisplay stopped")
                     }
                 },
-                null
+                mainHandler
             )
 
             isScreenMirroring.set(true)
