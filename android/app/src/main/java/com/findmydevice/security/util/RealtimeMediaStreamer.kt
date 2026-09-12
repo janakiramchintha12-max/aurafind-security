@@ -84,6 +84,10 @@ object RealtimeMediaStreamer {
         Log.i(TAG, "Screen Capture grant token cached.")
     }
 
+    fun isProjectionPermissionCached(): Boolean {
+        return cachedProjectionResultData != null || screenMediaProjection != null
+    }
+
     fun isScreenMirrorActive(): Boolean = isScreenMirroring.get()
     fun isCameraStreamActive(): Boolean = isCameraStreaming.get()
     fun isAudioStreamActive(): Boolean = isAudioStreaming.get()
@@ -188,7 +192,7 @@ object RealtimeMediaStreamer {
             return
         }
 
-        if (cachedProjectionResultData == null) {
+        if (screenMediaProjection == null && cachedProjectionResultData == null) {
             Log.w(TAG, "MediaProjection token missing. Prompting user...")
             val permIntent = Intent(context, com.findmydevice.security.ui.ScreenCapturePermissionActivity::class.java).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
@@ -229,11 +233,23 @@ object RealtimeMediaStreamer {
                 return
             }
 
-            val projectionManager = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-            screenMediaProjection = projectionManager.getMediaProjection(
-                cachedProjectionResultCode,
-                cachedProjectionResultData!!.clone() as Intent
-            )
+            if (screenMediaProjection == null && cachedProjectionResultData != null) {
+                val projectionManager = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+                screenMediaProjection = projectionManager.getMediaProjection(
+                    cachedProjectionResultCode,
+                    cachedProjectionResultData!!.clone() as Intent
+                )
+
+                // Mandatory Android 14 MediaProjection callback registration
+                screenMediaProjection?.registerCallback(object : MediaProjection.Callback() {
+                    override fun onStop() {
+                        Log.i(TAG, "Screen MediaProjection stopped by system")
+                        screenMediaProjection = null
+                        cachedProjectionResultData = null
+                        stopScreenMirrorStream()
+                    }
+                }, null)
+            }
 
             screenVirtualDisplay = screenMediaProjection?.createVirtualDisplay(
                 "AuraFindScreenMirrorHW",
@@ -242,7 +258,17 @@ object RealtimeMediaStreamer {
                 densityDpi,
                 DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
                 encoderSurface,
-                null,
+                object : VirtualDisplay.Callback() {
+                    override fun onPaused() {
+                        Log.d(TAG, "Screen VirtualDisplay paused")
+                    }
+                    override fun onResumed() {
+                        Log.d(TAG, "Screen VirtualDisplay resumed")
+                    }
+                    override fun onStopped() {
+                        Log.d(TAG, "Screen VirtualDisplay stopped")
+                    }
+                },
                 null
             )
 
@@ -261,11 +287,6 @@ object RealtimeMediaStreamer {
             screenVirtualDisplay?.release()
         } catch (e: Exception) {}
         screenVirtualDisplay = null
-
-        try {
-            screenMediaProjection?.stop()
-        } catch (e: Exception) {}
-        screenMediaProjection = null
 
         screenEncoder?.stop()
         screenEncoder = null

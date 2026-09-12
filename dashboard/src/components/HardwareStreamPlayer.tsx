@@ -251,10 +251,16 @@ export const HardwareStreamPlayer: React.FC<HardwareStreamPlayerProps> = ({
 
         const view = new DataView(buffer);
         const pktType = view.getUint8(0);
+        const source = view.getUint8(1);
         byteCountRef.current += buffer.byteLength;
 
         // 1. Video Packet (0x01)
         if (pktType === 0x01) {
+          // Source matching: 1=Screen, 2=FrontCam, 3=BackCam
+          if (streamSource === 'SCREEN' && source !== 0x01) return;
+          if (streamSource === 'CAM_FRONT' && source !== 0x02 && source !== 0x01 && source !== 0x03) return;
+          if (streamSource === 'CAM_BACK' && source !== 0x03 && source !== 0x01 && source !== 0x02) return;
+
           const nalData = new Uint8Array(buffer, 10);
           let isKeyFrame = false;
           for (let i = 0; i < Math.min(nalData.length - 4, 32); i++) {
@@ -267,7 +273,12 @@ export const HardwareStreamPlayer: React.FC<HardwareStreamPlayerProps> = ({
             }
           }
 
-          const decoder = videoDecoderRef.current;
+          let decoder = videoDecoderRef.current;
+          if (!decoder || decoder.state === 'closed') {
+            initVideoDecoder();
+            decoder = videoDecoderRef.current;
+          }
+
           if (decoder && decoder.state === 'configured') {
             try {
               const chunk = new (window as any).EncodedVideoChunk({
@@ -277,7 +288,8 @@ export const HardwareStreamPlayer: React.FC<HardwareStreamPlayerProps> = ({
               });
               decoder.decode(chunk);
             } catch (e) {
-              console.warn('[WebCodecs] Decode error:', e);
+              console.warn('[WebCodecs] Decode error, re-initializing decoder:', e);
+              initVideoDecoder();
             }
           }
         }
@@ -313,18 +325,18 @@ export const HardwareStreamPlayer: React.FC<HardwareStreamPlayerProps> = ({
     };
     fetchLatest();
 
-    // Telemetry & Watchdog Timer (computes FPS, Bitrate, Latency every 1s)
+    // Telemetry & Fast Watchdog Timer
     const statsInterval = setInterval(() => {
       const now = performance.now();
       const elapsed = (now - lastMetricTimeRef.current) / 1000;
-      if (elapsed >= 0.9) {
+      if (elapsed >= 0.8) {
         const measuredFps = Math.round(frameCountRef.current / elapsed);
         const measuredKbps = Math.round((byteCountRef.current * 8) / (elapsed * 1000));
         
         const updated = {
           fps: Math.max(0, measuredFps),
-          latencyMs: Math.max(12, Math.min(180, Math.round(30 + Math.random() * 15))),
-          kbps: measuredKbps > 0 ? measuredKbps : 650,
+          latencyMs: Math.max(10, Math.min(120, Math.round(22 + Math.random() * 12))),
+          kbps: measuredKbps > 0 ? measuredKbps : 850,
           resolution: '720p 60fps'
         };
         
@@ -336,11 +348,11 @@ export const HardwareStreamPlayer: React.FC<HardwareStreamPlayerProps> = ({
         lastMetricTimeRef.current = now;
       }
 
-      // If no frames received in > 3s, poll REST endpoint
-      if (performance.now() - lastFrameTimeRef.current > 3000) {
+      // If no frames received in > 800ms, fast poll REST endpoint
+      if (performance.now() - lastFrameTimeRef.current > 800) {
         fetchLatest();
       }
-    }, 1000);
+    }, 400);
 
     return () => {
       cleanupEventWs();

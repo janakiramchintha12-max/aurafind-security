@@ -120,6 +120,14 @@ object ScreenMirrorManager {
                 return
             }
 
+            // Mandatory Android 14 MediaProjection callback
+            mediaProjection?.registerCallback(object : MediaProjection.Callback() {
+                override fun onStop() {
+                    Log.i(TAG, "MediaProjection stopped by system")
+                    stopScreenMirror()
+                }
+            }, backgroundHandler)
+
             imageReader = ImageReader.newInstance(targetWidth, targetHeight, PixelFormat.RGBA_8888, 3)
             imageReader?.setOnImageAvailableListener({ reader ->
                 val image = reader.acquireLatestImage() ?: return@setOnImageAvailableListener

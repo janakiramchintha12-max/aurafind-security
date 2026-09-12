@@ -60,6 +60,15 @@ class HardwareH264Encoder(
                 // Ultra-low latency real-time encoding flags
                 setInteger(MediaFormat.KEY_LATENCY, 0)
                 setInteger(MediaFormat.KEY_PRIORITY, 0) // Realtime priority
+                
+                // Continuous frame delivery even when screen is static (30 FPS = 33,333 us)
+                try {
+                    setLong(MediaFormat.KEY_REPEAT_PREVIOUS_FRAME_AFTER, 33_333L)
+                } catch (e: Exception) {}
+                try {
+                    setInteger(MediaFormat.KEY_MAX_PTS_GAP_TO_ENCODER, 33333)
+                } catch (e: Exception) {}
+
                 try {
                     setInteger(MediaFormat.KEY_BITRATE_MODE, MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR)
                 } catch (e: Exception) {
