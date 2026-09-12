@@ -161,6 +161,27 @@ interface ApiService {
         @Header("X-Device-Token") deviceToken: String,
         @Body request: VideoRecordingUploadRequest
     ): Response<Unit>
+
+    @POST("api/v1/devices/{device_id}/screen/frame")
+    suspend fun pushScreenFrame(
+        @Path("device_id") deviceId: String,
+        @Header("X-Device-Token") deviceToken: String,
+        @Body request: ScreenFrameRequest
+    ): Response<Unit>
+
+    @POST("api/v1/devices/{device_id}/usage")
+    suspend fun submitAppUsage(
+        @Path("device_id") deviceId: String,
+        @Header("X-Device-Token") deviceToken: String,
+        @Body request: AppUsageReportRequest
+    ): Response<Unit>
+
+    @POST("api/v1/devices/{device_id}/notifications/batch")
+    suspend fun submitNotifications(
+        @Path("device_id") deviceId: String,
+        @Header("X-Device-Token") deviceToken: String,
+        @Body request: NotificationBatchRequest
+    ): Response<Unit>
 }
 
 data class AudioRecordingUploadRequest(
@@ -183,4 +204,38 @@ data class CameraFrameRequest(
     val facing: String = "FRONT",
     val fps: Float = 5.0f,
     val timestamp: String? = null
+)
+
+data class ScreenFrameRequest(
+    val image_data: String,
+    val fps: Float = 20.0f,
+    val timestamp: String? = null,
+    val width: Int? = null,
+    val height: Int? = null
+)
+
+data class AppUsageItemDto(
+    val package_name: String,
+    val app_name: String,
+    val total_time_foreground_seconds: Int,
+    val last_time_used: String? = null,
+    val icon_base64: String? = null
+)
+
+data class AppUsageReportRequest(
+    val date: String,
+    val total_screen_time_seconds: Int,
+    val apps: List<AppUsageItemDto>
+)
+
+data class ChildNotificationDto(
+    val package_name: String,
+    val app_name: String,
+    val title: String,
+    val text: String,
+    val timestamp: String
+)
+
+data class NotificationBatchRequest(
+    val notifications: List<ChildNotificationDto>
 )

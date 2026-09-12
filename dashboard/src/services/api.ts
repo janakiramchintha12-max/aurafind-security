@@ -197,6 +197,27 @@ export const auditApi = {
   },
 };
 
+export const screenApi = {
+  getLatestFrame: async (deviceId: string) => {
+    const res = await api.get(`/devices/${deviceId}/screen/latest`);
+    return res.data;
+  },
+  getMjpegUrl: (deviceId: string) => {
+    return `${API_BASE_URL}/devices/${deviceId}/screen/mjpeg`;
+  }
+};
+
+export const parentalApi = {
+  getAppUsage: async (deviceId: string) => {
+    const res = await api.get(`/devices/${deviceId}/usage`);
+    return res.data;
+  },
+  getNotifications: async (deviceId: string) => {
+    const res = await api.get(`/devices/${deviceId}/notifications`);
+    return res.data;
+  }
+};
+
 export function connectWebSocket(onMessage: (data: any) => void): () => void {
   const token = localStorage.getItem('token');
   if (!token) return () => {};

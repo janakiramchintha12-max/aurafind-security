@@ -4,6 +4,7 @@ import { devicesApi, commandsApi, connectWebSocket } from '../services/api';
 import { Device } from '../types';
 import { DeviceCard } from '../components/DeviceCard';
 import { LiveCameraStreamModal } from '../components/LiveCameraStreamModal';
+import { LiveScreenMirrorModal } from '../components/LiveScreenMirrorModal';
 import { VoiceCallModal } from '../components/VoiceCallModal';
 import { TtsVoiceModal } from '../components/TtsVoiceModal';
 import { PoliceReportModal } from '../components/PoliceReportModal';
@@ -14,6 +15,7 @@ export const DashboardPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [registerOpen, setRegisterOpen] = useState(false);
   const [activeCameraDevice, setActiveCameraDevice] = useState<Device | null>(null);
+  const [activeScreenMirrorDevice, setActiveScreenMirrorDevice] = useState<Device | null>(null);
   const [activeVoiceDevice, setActiveVoiceDevice] = useState<Device | null>(null);
   const [activeTtsDevice, setActiveTtsDevice] = useState<Device | null>(null);
   const [activeReportDevice, setActiveReportDevice] = useState<Device | null>(null);
@@ -245,12 +247,21 @@ export const DashboardPage: React.FC = () => {
               onSync={handleSync}
               onTakeSelfie={handleTakeSelfie}
               onOpenLiveCamera={(dev) => setActiveCameraDevice(dev)}
+              onOpenScreenMirror={(dev) => setActiveScreenMirrorDevice(dev)}
               onOpenVoiceCall={(dev) => setActiveVoiceDevice(dev)}
               onOpenTts={(dev) => setActiveTtsDevice(dev)}
               onOpenPoliceReport={(dev) => setActiveReportDevice(dev)}
             />
           ))}
         </div>
+      )}
+
+      {/* Live Screen Mirror Modal */}
+      {activeScreenMirrorDevice && (
+        <LiveScreenMirrorModal
+          device={activeScreenMirrorDevice}
+          onClose={() => setActiveScreenMirrorDevice(null)}
+        />
       )}
 
       {/* Live Camera Stream Modal */}

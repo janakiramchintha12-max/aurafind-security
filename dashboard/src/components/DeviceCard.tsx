@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Smartphone, Battery, BatteryCharging, Wifi, WifiOff, Radio, MapPin, Bell, BellOff, RefreshCw, ChevronRight, Lock, AlertTriangle, Camera, Phone, Shield, FileText, Edit3, Save, X } from 'lucide-react';
+import { Smartphone, Battery, BatteryCharging, Wifi, WifiOff, Radio, MapPin, Bell, BellOff, RefreshCw, ChevronRight, Lock, AlertTriangle, Camera, Phone, Shield, FileText, Edit3, Save, X, Tv } from 'lucide-react';
 import { Device } from '../types';
 import { devicesApi } from '../services/api';
 
@@ -13,12 +13,13 @@ interface DeviceCardProps {
   onSync?: (deviceId: string) => void;
   onTakeSelfie?: (deviceId: string) => void;
   onOpenLiveCamera?: (device: Device) => void;
+  onOpenScreenMirror?: (device: Device) => void;
   onOpenVoiceCall?: (device: Device) => void;
   onOpenTts?: (device: Device) => void;
   onOpenPoliceReport?: (device: Device) => void;
 }
 
-export const DeviceCard: React.FC<DeviceCardProps> = ({ device, onLocate, onRing, onStopRing, onToggleLostMode, onSync, onTakeSelfie, onOpenLiveCamera, onOpenVoiceCall, onOpenTts, onOpenPoliceReport }) => {
+export const DeviceCard: React.FC<DeviceCardProps> = ({ device, onLocate, onRing, onStopRing, onToggleLostMode, onSync, onTakeSelfie, onOpenLiveCamera, onOpenScreenMirror, onOpenVoiceCall, onOpenTts, onOpenPoliceReport }) => {
   const isOnline = device.status === 'ONLINE';
 
   // Edit Modal State
@@ -273,11 +274,19 @@ export const DeviceCard: React.FC<DeviceCardProps> = ({ device, onLocate, onRing
         </button>
 
         <button
+          onClick={() => onOpenScreenMirror && onOpenScreenMirror(device)}
+          className="flex items-center justify-center space-x-1 py-1.5 bg-indigo-600/30 hover:bg-indigo-600/40 text-indigo-200 border border-indigo-500/40 rounded-lg text-xs font-bold transition-all shadow"
+        >
+          <Tv className="w-3.5 h-3.5 text-indigo-400 animate-pulse" />
+          <span>Screen Mirror</span>
+        </button>
+
+        <button
           onClick={() => onOpenLiveCamera && onOpenLiveCamera(device)}
           className="flex items-center justify-center space-x-1 py-1.5 bg-rose-600/30 hover:bg-rose-600/40 text-rose-200 border border-rose-500/40 rounded-lg text-xs font-bold transition-all"
         >
           <Camera className="w-3.5 h-3.5 text-rose-400 animate-pulse" />
-          <span>Live Stream</span>
+          <span>Live Camera</span>
         </button>
 
         <button

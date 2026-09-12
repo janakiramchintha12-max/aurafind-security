@@ -141,3 +141,34 @@ export interface VideoRecording {
   created_at: string;
 }
 
+export interface ScreenFrame {
+  image_data: string;
+  fps?: number;
+  timestamp?: string;
+  width?: number;
+  height?: number;
+  seq?: number;
+}
+
+export interface AppUsageItem {
+  package_name: string;
+  app_name: string;
+  total_time_foreground_seconds: number;
+  last_time_used?: string;
+  icon_base64?: string;
+}
+
+export interface AppUsageReport {
+  date: string;
+  total_screen_time_seconds: number;
+  apps: AppUsageItem[];
+}
+
+export interface ChildNotification {
+  package_name: string;
+  app_name: string;
+  title: string;
+  text: string;
+  timestamp: string;
+}
+

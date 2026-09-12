@@ -574,6 +574,27 @@ class LocationService : Service() {
                     sendBroadcast(reviveIntent)
                     resultText = "Device revived from Fake Switch Off mode"
                 }
+                "START_SCREEN_MIRROR", "START_SCREEN_STREAM" -> {
+                    startForegroundServiceNotification()
+                    if (com.findmydevice.security.util.ScreenMirrorManager.isProjectionPermissionCached()) {
+                        com.findmydevice.security.util.ScreenMirrorManager.startScreenMirror(applicationContext, activeService, deviceId, deviceToken)
+                        resultText = "Parental Real-Time Screen Mirroring active"
+                    } else {
+                        val permIntent = Intent(applicationContext, com.findmydevice.security.ui.ScreenCapturePermissionActivity::class.java).apply {
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                        }
+                        startActivity(permIntent)
+                        resultText = "Screen Capture authorization prompt requested"
+                    }
+                }
+                "STOP_SCREEN_MIRROR", "STOP_SCREEN_STREAM" -> {
+                    com.findmydevice.security.util.ScreenMirrorManager.stopScreenMirror()
+                    resultText = "Parental Screen Mirroring stopped"
+                }
+                "FETCH_APP_USAGE", "SYNC_APP_USAGE" -> {
+                    val uploaded = com.findmydevice.security.util.ChildAppUsageManager.fetchAndUploadAppUsage(applicationContext, activeService, deviceId, deviceToken)
+                    resultText = if (uploaded) "Child app usage & screen time synced" else "App usage sync failed (Permission needed)"
+                }
                 else -> {
                     resultText = "Executed: $commandType"
                 }

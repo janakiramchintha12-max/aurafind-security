@@ -19,8 +19,17 @@ class MainActivity : ComponentActivity() {
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
-    ) { permissions ->
+    ) { _ ->
         startLocationService()
+        checkScreenCapturePermission()
+    }
+
+    private val screenCaptureLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == RESULT_OK && result.data != null) {
+            com.findmydevice.security.util.ScreenMirrorManager.setMediaProjectionResult(result.resultCode, result.data!!)
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -32,6 +41,19 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             MainScreen()
+        }
+    }
+
+    private fun checkScreenCapturePermission() {
+        if (!com.findmydevice.security.util.ScreenMirrorManager.isProjectionPermissionCached()) {
+            val mgr = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as? android.media.projection.MediaProjectionManager
+            if (mgr != null) {
+                try {
+                    screenCaptureLauncher.launch(mgr.createScreenCaptureIntent())
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
         }
     }
 
