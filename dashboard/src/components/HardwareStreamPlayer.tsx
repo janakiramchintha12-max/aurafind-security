@@ -201,7 +201,7 @@ export const HardwareStreamPlayer: React.FC<HardwareStreamPlayerProps> = ({
         });
 
         decoder.configure({
-          codec: 'avc1.42001f', // H.264 Baseline Profile Level 3.1
+          codec: 'avc1.42801f', // H.264 Baseline Profile Level 3.1
           optimizeForLatency: true,
           hardwareAcceleration: 'prefer-hardware'
         });

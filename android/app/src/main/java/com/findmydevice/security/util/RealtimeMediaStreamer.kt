@@ -212,7 +212,7 @@ object RealtimeMediaStreamer {
 
             // Responsive dimensions (ensure even numbers for H.264 encoder)
             val aspect = metrics.heightPixels.toFloat() / metrics.widthPixels.toFloat()
-            val encWidth = 540
+            val encWidth = 720
             var encHeight = (540 * aspect).toInt()
             if (encHeight % 2 != 0) encHeight += 1
 
@@ -220,7 +220,7 @@ object RealtimeMediaStreamer {
                 width = encWidth,
                 height = encHeight,
                 frameRate = 30,
-                bitRate = 1_200_000,
+                bitRate = 2_800_000,
                 iFrameIntervalSeconds = 1
             ) { nalBytes, isKeyFrame, timestampUs ->
                 sendBinaryPacket(PKT_VIDEO, SRC_SCREEN, timestampUs, nalBytes)
@@ -306,8 +306,8 @@ object RealtimeMediaStreamer {
         deviceId: String,
         deviceToken: String,
         facing: String = "FRONT",
-        width: Int = 640,
-        height: Int = 480
+        width: Int = 1280,
+        height: Int = 720
     ) {
         if (PrivacyManager.isCameraPaused(context)) {
             Log.w(TAG, "Camera stream paused by device user.")
@@ -341,7 +341,7 @@ object RealtimeMediaStreamer {
                 width = width,
                 height = height,
                 frameRate = 30,
-                bitRate = 800_000,
+                bitRate = 2_400_000,
                 iFrameIntervalSeconds = 1
             ) { nalBytes, isKeyFrame, timestampUs ->
                 sendBinaryPacket(PKT_VIDEO, sourceId, timestampUs, nalBytes)
