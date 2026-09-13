@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { Activity, Gauge, Wifi, Volume2, Sparkles, RefreshCw } from 'lucide-react';
+import { Activity, Gauge, Wifi, Volume2, Sparkles, RefreshCw, Zap, Image as ImageIcon } from 'lucide-react';
 import { connectWebSocket, screenApi, cameraApi } from '../services/api';
 
 interface HardwareStreamPlayerProps {
@@ -25,14 +25,16 @@ export const HardwareStreamPlayer: React.FC<HardwareStreamPlayerProps> = ({
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [hasReceivedFrame, setHasReceivedFrame] = useState(false);
-  const [stats, setStats] = useState({ fps: 30, latencyMs: 25, kbps: 850, resolution: '720p' });
+  const [stats, setStats] = useState({ fps: 30, latencyMs: 25, kbps: 850, resolution: '720p 60fps' });
   const [useMjpegFallback, setUseMjpegFallback] = useState(false);
+  const [streamEngine, setStreamEngine] = useState<'HARDWARE_H264' | 'SMOOTH_MJPEG'>('HARDWARE_H264');
   
   // Decoding refs
   const binaryWsRef = useRef<WebSocket | null>(null);
   const videoDecoderRef = useRef<any | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const nextAudioPlayTimeRef = useRef<number>(0);
+  const hasSeenKeyFrameRef = useRef<boolean>(false);
   
   // Frame telemetry metrics refs
   const frameCountRef = useRef<number>(0);
@@ -59,7 +61,7 @@ export const HardwareStreamPlayer: React.FC<HardwareStreamPlayerProps> = ({
     }
   }, [enableAudio, initAudioContext]);
 
-  // Direct 2D Canvas Image Drawer for JPEG Frames
+  // Direct 2D Canvas Image Drawer
   const drawImageToCanvas = useCallback((img: HTMLImageElement | ImageBitmap) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -95,11 +97,14 @@ export const HardwareStreamPlayer: React.FC<HardwareStreamPlayerProps> = ({
     frameCountRef.current++;
     lastFrameTimeRef.current = performance.now();
 
-    if (!hasReceivedFrame) {
-      setHasReceivedFrame(true);
-      if (onFirstFrameReceived) onFirstFrameReceived();
-    }
-  }, [rotationDegrees, isMirrored, hasReceivedFrame, onFirstFrameReceived]);
+    setHasReceivedFrame(prev => {
+      if (!prev) {
+        if (onFirstFrameReceived) onFirstFrameReceived();
+        return true;
+      }
+      return prev;
+    });
+  }, [rotationDegrees, isMirrored, onFirstFrameReceived]);
 
   // Render WebCodecs VideoFrame directly onto Canvas
   const renderWebCodecsFrame = useCallback((videoFrame: any) => {
@@ -141,11 +146,14 @@ export const HardwareStreamPlayer: React.FC<HardwareStreamPlayerProps> = ({
     frameCountRef.current++;
     lastFrameTimeRef.current = performance.now();
 
-    if (!hasReceivedFrame) {
-      setHasReceivedFrame(true);
-      if (onFirstFrameReceived) onFirstFrameReceived();
-    }
-  }, [rotationDegrees, isMirrored, hasReceivedFrame, onFirstFrameReceived]);
+    setHasReceivedFrame(prev => {
+      if (!prev) {
+        if (onFirstFrameReceived) onFirstFrameReceived();
+        return true;
+      }
+      return prev;
+    });
+  }, [rotationDegrees, isMirrored, onFirstFrameReceived]);
 
   // Play incoming 16kHz PCM audio chunk
   const playPcmChunk = useCallback((pcmBytes: Uint8Array) => {
@@ -172,13 +180,12 @@ export const HardwareStreamPlayer: React.FC<HardwareStreamPlayerProps> = ({
       source.start(nextAudioPlayTimeRef.current);
       nextAudioPlayTimeRef.current += audioBuffer.duration;
 
-    } catch (e) {
-      // quiet audio frame drop
-    }
+    } catch (e) {}
   }, [enableAudio]);
 
   // Setup WebCodecs VideoDecoder
   const initVideoDecoder = useCallback(() => {
+    hasSeenKeyFrameRef.current = false;
     if ('VideoDecoder' in window) {
       try {
         if (videoDecoderRef.current && videoDecoderRef.current.state !== 'closed') {
@@ -188,7 +195,8 @@ export const HardwareStreamPlayer: React.FC<HardwareStreamPlayerProps> = ({
         const decoder = new (window as any).VideoDecoder({
           output: (frame: any) => renderWebCodecsFrame(frame),
           error: (e: any) => {
-            console.warn('[WebCodecs] Decoder error:', e);
+            console.warn('[WebCodecs] Decoder error, will re-sync keyframe:', e);
+            hasSeenKeyFrameRef.current = false;
           }
         });
 
@@ -262,15 +270,35 @@ export const HardwareStreamPlayer: React.FC<HardwareStreamPlayerProps> = ({
           if (streamSource === 'CAM_BACK' && source !== 0x03 && source !== 0x01 && source !== 0x02) return;
 
           const nalData = new Uint8Array(buffer, 10);
+          
+          // Detect NAL units (SPS=7, PPS=8, IDR=5)
           let isKeyFrame = false;
-          for (let i = 0; i < Math.min(nalData.length - 4, 32); i++) {
-            if (nalData[i] === 0x00 && nalData[i+1] === 0x00 && (nalData[i+2] === 0x01 || (nalData[i+2] === 0x00 && nalData[i+3] === 0x01))) {
-              const nalType = nalData[i+2] === 0x01 ? (nalData[i+3] & 0x1F) : (nalData[i+4] & 0x1F);
-              if (nalType === 5 || nalType === 7) {
-                isKeyFrame = true;
-                break;
+          for (let i = 0; i < Math.min(nalData.length - 4, 40); i++) {
+            if (nalData[i] === 0x00 && nalData[i+1] === 0x00) {
+              if (nalData[i+2] === 0x01) {
+                const nalType = nalData[i+3] & 0x1F;
+                if (nalType === 5 || nalType === 7) {
+                  isKeyFrame = true;
+                  break;
+                }
+              } else if (nalData[i+2] === 0x00 && nalData[i+3] === 0x01) {
+                const nalType = nalData[i+4] & 0x1F;
+                if (nalType === 5 || nalType === 7) {
+                  isKeyFrame = true;
+                  break;
+                }
               }
             }
+          }
+
+          // Keyframe gating: Never feed delta frames before the first keyframe is seen
+          if (isKeyFrame) {
+            hasSeenKeyFrameRef.current = true;
+          }
+
+          if (!hasSeenKeyFrameRef.current) {
+            // Drop delta frame until keyframe arrives to prevent WebCodecs crash
+            return;
           }
 
           let decoder = videoDecoderRef.current;
@@ -288,8 +316,8 @@ export const HardwareStreamPlayer: React.FC<HardwareStreamPlayerProps> = ({
               });
               decoder.decode(chunk);
             } catch (e) {
-              console.warn('[WebCodecs] Decode error, re-initializing decoder:', e);
-              initVideoDecoder();
+              console.warn('[WebCodecs] Decode error, requesting keyframe re-sync:', e);
+              hasSeenKeyFrameRef.current = false;
             }
           }
         }
@@ -303,7 +331,7 @@ export const HardwareStreamPlayer: React.FC<HardwareStreamPlayerProps> = ({
       console.warn('Binary stream WS failed to initialize:', e);
     }
 
-    // Initial frame lookup via REST
+    // Initial frame lookup & continuous polling fallback
     const fetchLatest = async () => {
       try {
         if (streamSource === 'SCREEN') {
@@ -324,6 +352,13 @@ export const HardwareStreamPlayer: React.FC<HardwareStreamPlayerProps> = ({
       } catch (e) {}
     };
     fetchLatest();
+
+    // Polling interval if frames haven't arrived yet
+    const fallbackPollInterval = setInterval(() => {
+      if (!hasReceivedFrame) {
+        fetchLatest();
+      }
+    }, 1200);
 
     // Telemetry & Fast Watchdog Timer
     const statsInterval = setInterval(() => {
@@ -348,14 +383,15 @@ export const HardwareStreamPlayer: React.FC<HardwareStreamPlayerProps> = ({
         lastMetricTimeRef.current = now;
       }
 
-      // If no frames received in > 800ms, fast poll REST endpoint
-      if (performance.now() - lastFrameTimeRef.current > 800) {
-        fetchLatest();
+      // Auto-dismiss loading spinner after 2.5s if stream bytes are arriving
+      if (!hasReceivedFrame && (performance.now() - lastFrameTimeRef.current < 2000 || byteCountRef.current > 0)) {
+        setHasReceivedFrame(true);
       }
     }, 400);
 
     return () => {
       cleanupEventWs();
+      clearInterval(fallbackPollInterval);
       clearInterval(statsInterval);
       if (binaryWsRef.current) {
         binaryWsRef.current.close();
@@ -370,11 +406,11 @@ export const HardwareStreamPlayer: React.FC<HardwareStreamPlayerProps> = ({
         audioCtxRef.current = null;
       }
     };
-  }, [deviceId, streamSource, initVideoDecoder, drawImageToCanvas, playPcmChunk, onStatsChange]);
+  }, [deviceId, streamSource, initVideoDecoder, drawImageToCanvas, playPcmChunk, onStatsChange, hasReceivedFrame]);
 
   const mjpegFallbackUrl = streamSource === 'SCREEN' 
-    ? `/api/v1/devices/${deviceId}/screen/mjpeg`
-    : `/api/v1/devices/${deviceId}/camera/mjpeg`;
+    ? `/api/v1/devices/${deviceId}/screen/mjpeg?t=${Date.now()}`
+    : `/api/v1/devices/${deviceId}/camera/mjpeg?t=${Date.now()}`;
 
   return (
     <div className={`relative bg-black flex items-center justify-center overflow-hidden ${className}`}>
@@ -423,7 +459,30 @@ export const HardwareStreamPlayer: React.FC<HardwareStreamPlayerProps> = ({
           📶 {stats.kbps} kbps
         </span>
       </div>
+
+      {/* Engine Switcher on bottom-right of player */}
+      <div className="absolute bottom-3 right-3 flex items-center space-x-1.5 bg-slate-900/80 backdrop-blur-md px-2 py-1 rounded-xl border border-slate-700/60 z-20">
+        <button
+          onClick={() => setUseMjpegFallback(false)}
+          className={`flex items-center space-x-1 px-2 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
+            !useMjpegFallback ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'
+          }`}
+          title="Hardware H.264 WebCodecs GPU Stream"
+        >
+          <Zap className="w-3 h-3" />
+          <span>GPU H.264</span>
+        </button>
+        <button
+          onClick={() => setUseMjpegFallback(true)}
+          className={`flex items-center space-x-1 px-2 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
+            useMjpegFallback ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'
+          }`}
+          title="Direct MJPEG Stream"
+        >
+          <ImageIcon className="w-3 h-3" />
+          <span>MJPEG</span>
+        </button>
+      </div>
     </div>
   );
 };
-

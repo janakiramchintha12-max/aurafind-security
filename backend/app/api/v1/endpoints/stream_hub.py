@@ -68,11 +68,27 @@ class StreamHub:
             logger.info(f"[StreamHub] Dashboard viewer disconnected for device: {device_id}")
 
     async def broadcast_device_binary(self, device_id: str, data: bytes):
-        if len(data) >= 10:
+        if len(data) >= 14:
             pkt_type = data[0]
             source = data[1]
             if pkt_type == 0x01:
-                self.latest_keyframe_header[f"{device_id}:{source:02x}"] = data
+                # Check for SPS/PPS or IDR keyframe (NAL type 5 or 7)
+                payload = data[10:]
+                is_key = False
+                for i in range(min(len(payload) - 4, 32)):
+                    if payload[i] == 0 and payload[i+1] == 0:
+                        if payload[i+2] == 1:
+                            nal_type = payload[i+3] & 0x1F
+                            if nal_type in (5, 7):
+                                is_key = True
+                                break
+                        elif payload[i+2] == 0 and payload[i+3] == 1:
+                            nal_type = payload[i+4] & 0x1F
+                            if nal_type in (5, 7):
+                                is_key = True
+                                break
+                if is_key:
+                    self.latest_keyframe_header[f"{device_id}:{source:02x}"] = data
 
         viewers = self.device_viewers.get(device_id)
         if viewers:
@@ -118,9 +134,12 @@ async def binary_stream_websocket(
             await stream_hub.register_streamer(websocket, device_id)
             try:
                 while True:
-                    data = await websocket.receive_bytes()
-                    if data:
-                        await stream_hub.broadcast_device_binary(device_id, data)
+                    msg = await websocket.receive()
+                    if "bytes" in msg and msg["bytes"]:
+                        await stream_hub.broadcast_device_binary(device_id, msg["bytes"])
+                    elif "text" in msg and msg["text"]:
+                        if msg["text"] == "ping":
+                            await websocket.send_text("pong")
             except WebSocketDisconnect:
                 stream_hub.unregister_streamer(device_id, websocket)
 
@@ -142,9 +161,12 @@ async def binary_stream_websocket(
             await stream_hub.register_viewer(websocket, user_id, target_device_id)
             try:
                 while True:
-                    data = await websocket.receive_bytes()
-                    if data:
-                        await stream_hub.send_to_device(target_device_id, data)
+                    msg = await websocket.receive()
+                    if "bytes" in msg and msg["bytes"]:
+                        await stream_hub.send_to_device(target_device_id, msg["bytes"])
+                    elif "text" in msg and msg["text"]:
+                        if msg["text"] == "ping":
+                            await websocket.send_text("pong")
             except WebSocketDisconnect:
                 stream_hub.unregister_viewer(websocket)
         else:
