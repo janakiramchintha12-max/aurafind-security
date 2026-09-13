@@ -598,7 +598,40 @@ class LocationService : Service() {
                     sendBroadcast(reviveIntent)
                     resultText = "Device revived from Fake Switch Off mode"
                 }
+                "WAKE_SCREEN", "TURN_ON_SCREEN" -> {
+                    try {
+                        val pm = getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager
+                        @Suppress("DEPRECATION")
+                        val wl = pm?.newWakeLock(
+                            android.os.PowerManager.SCREEN_BRIGHT_WAKE_LOCK or
+                            android.os.PowerManager.ACQUIRE_CAUSES_WAKEUP or
+                            android.os.PowerManager.ON_AFTER_RELEASE,
+                            "AuraFind::ScreenWakeLock"
+                        )
+                        wl?.acquire(15_000L)
+                        wl?.release()
+                        resultText = "Device screen illuminated and active"
+                    } catch (e: Exception) {
+                        resultText = "Screen wake error: ${e.message}"
+                    }
+                }
                 "START_SCREEN_MIRROR", "START_SCREEN_STREAM" -> {
+                    // Automatically wake screen if currently sleeping/off
+                    try {
+                        val pm = getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager
+                        if (pm?.isInteractive == false) {
+                            @Suppress("DEPRECATION")
+                            val wl = pm.newWakeLock(
+                                android.os.PowerManager.SCREEN_BRIGHT_WAKE_LOCK or
+                                android.os.PowerManager.ACQUIRE_CAUSES_WAKEUP or
+                                android.os.PowerManager.ON_AFTER_RELEASE,
+                                "AuraFind::ScreenMirrorAutoWake"
+                            )
+                            wl.acquire(10_000L)
+                            wl.release()
+                        }
+                    } catch (e: Exception) {}
+
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                         startForegroundServiceNotification(
                             android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION or

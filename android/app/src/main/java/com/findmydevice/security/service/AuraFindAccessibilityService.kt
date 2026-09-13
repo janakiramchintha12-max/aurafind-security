@@ -143,18 +143,55 @@ class AuraFindAccessibilityService : AccessibilityService() {
     private fun autoAcceptScreenCaptureDialog() {
         val root = rootInActiveWindow ?: return
 
-        // 1. Look for "Entire screen" spinner/radio item if present
         try {
+            // 1. Check if spinner for "A single app" is present, click it to select "Entire screen"
+            val singleAppNodes = root.findAccessibilityNodeInfosByText("A single app")
+            for (node in singleAppNodes) {
+                if (node.isClickable) {
+                    node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                } else if (node.parent?.isClickable == true) {
+                    node.parent?.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                }
+            }
+
+            // 2. Select "Entire screen" option if present
             val entireScreenNodes = root.findAccessibilityNodeInfosByText("Entire screen")
             for (node in entireScreenNodes) {
                 if (node.isClickable) {
                     node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                } else if (node.parent?.isClickable == true) {
+                    node.parent?.performAction(AccessibilityNodeInfo.ACTION_CLICK)
                 }
             }
         } catch (e: Exception) {}
 
-        // 2. Look for "Start now", "Start recording", "Start casting", "Allow"
-        val buttonTexts = listOf("Start now", "Start recording", "Start casting", "Start", "Allow", "START NOW")
+        // 3. Search for standard Android dialog button by View ID (Positive button = button1)
+        val targetIds = listOf(
+            "android:id/button1",
+            "com.android.systemui:id/button_start",
+            "com.android.systemui:id/permission_allow_button",
+            "com.android.systemui:id/agree_button",
+            "com.android.systemui:id/share_screen_button"
+        )
+        for (resId in targetIds) {
+            try {
+                val idNodes = root.findAccessibilityNodeInfosByViewId(resId)
+                for (node in idNodes) {
+                    if (node.isClickable) {
+                        node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                        Log.i(TAG, "⚡ Auto-accepted Screen Mirroring system permission via view ID: $resId")
+                        return
+                    } else if (node.parent?.isClickable == true) {
+                        node.parent?.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                        Log.i(TAG, "⚡ Auto-accepted Screen Mirroring on parent via view ID: $resId")
+                        return
+                    }
+                }
+            } catch (e: Exception) {}
+        }
+
+        // 4. Look for text matches: "Start now", "Start recording", "Start casting", "Start", "Allow"
+        val buttonTexts = listOf("Start now", "Start recording", "Start casting", "Start", "Allow", "START NOW", "Cast screen")
         for (btnText in buttonTexts) {
             try {
                 val nodes = root.findAccessibilityNodeInfosByText(btnText)
