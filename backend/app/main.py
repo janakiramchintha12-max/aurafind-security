@@ -39,20 +39,6 @@ def seed_default_admin():
             janaki_user.hashed_password = get_password_hash("Janakiram12")
             db.commit()
 
-        # Also support admin / 1234
-        admin_user = db.query(User).filter(User.email == "admin").first()
-        if not admin_user:
-            admin_user = User(
-                id="default-admin-uuid",
-                email="admin",
-                hashed_password=get_password_hash("1234"),
-                full_name="Admin User"
-            )
-            db.add(admin_user)
-            db.commit()
-
-        # Ensure admin accounts exist
-        db.commit()
     except Exception as e:
         logging.getLogger("aurafind.auth").warning(f"Development seed skipped: {e}")
     finally:
