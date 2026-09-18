@@ -8,8 +8,8 @@ interface LoginPageProps {
 }
 
 export const Login: React.FC<LoginPageProps> = ({ setUser }) => {
-  const [email, setEmail] = useState('admin');
-  const [password, setPassword] = useState('1234');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();

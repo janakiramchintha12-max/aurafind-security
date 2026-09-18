@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { Navbar } from './components/Navbar';
 import { Login } from './pages/Login';
+import { Register } from './pages/Register';
 import { DashboardPage } from './pages/Dashboard';
 import { DeviceDetailsPage } from './pages/DeviceDetails';
 import { LiveLocationPage } from './pages/LiveLocation';
@@ -52,6 +53,7 @@ export const App: React.FC = () => {
         <main className="flex-1">
           <Routes>
             <Route path="/login" element={!user ? <Login setUser={setUser} /> : <Navigate to="/" replace />} />
+            <Route path="/register" element={!user ? <Register setUser={setUser} /> : <Navigate to="/" replace />} />
             
             <Route path="/" element={user ? <DashboardPage /> : <Navigate to="/login" replace />} />
             <Route path="/devices/:id" element={user ? <DeviceDetailsPage /> : <Navigate to="/login" replace />} />
