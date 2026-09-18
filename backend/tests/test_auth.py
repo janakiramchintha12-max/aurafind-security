@@ -18,6 +18,13 @@ def test_login_user(client, test_user):
     assert "access_token" in data
     assert "refresh_token" in data
 
+def test_login_normalizes_email(client, test_user):
+    response = client.post(
+        "/api/v1/auth/login",
+        json={"email": f"  {test_user.email.upper()}  ", "password": "Secret123!"}
+    )
+    assert response.status_code == 200
+
 def test_login_invalid_password(client, test_user):
     response = client.post(
         "/api/v1/auth/login",
@@ -51,4 +58,3 @@ def test_database_readiness_health(client):
     res = client.get("/health/ready")
     assert res.status_code == 200
     assert res.json() == {"status": "ready", "database": "connected"}
-

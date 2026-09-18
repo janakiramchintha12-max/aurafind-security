@@ -60,7 +60,7 @@ export const Login: React.FC<LoginPageProps> = ({ setUser }) => {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1">Email / Username</label>
+            <label className="block text-xs font-semibold text-slate-300 mb-1">Email address</label>
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-500">
                 <Mail className="w-4 h-4" />
