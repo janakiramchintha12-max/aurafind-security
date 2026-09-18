@@ -393,8 +393,10 @@ def purge_all_devices(
     from app.models.snapshot import Snapshot
     from app.models.location import Location
     from app.models.command import Command
-    from app.models.geofence import Geofence
+    from app.models.geofence import Geofence, GeofenceEvent
     from app.models.audit import AuditLog
+    from app.models.audio_recording import AudioRecording
+    from app.models.video_recording import VideoRecording
 
     devices = db.query(Device).filter(Device.user_id == current_user.id).all()
     dev_ids = [d.id for d in devices]
@@ -403,7 +405,14 @@ def purge_all_devices(
         db.query(Snapshot).filter(Snapshot.device_id.in_(dev_ids)).delete(synchronize_session=False)
         db.query(Location).filter(Location.device_id.in_(dev_ids)).delete(synchronize_session=False)
         db.query(Command).filter(Command.device_id.in_(dev_ids)).delete(synchronize_session=False)
+        db.query(AudioRecording).filter(AudioRecording.device_id.in_(dev_ids)).delete(synchronize_session=False)
+        db.query(VideoRecording).filter(VideoRecording.device_id.in_(dev_ids)).delete(synchronize_session=False)
         db.query(Device).filter(Device.id.in_(dev_ids)).delete(synchronize_session=False)
+
+    user_geofences = db.query(Geofence).filter(Geofence.user_id == current_user.id).all()
+    gf_ids = [g.id for g in user_geofences]
+    if gf_ids:
+        db.query(GeofenceEvent).filter(GeofenceEvent.geofence_id.in_(gf_ids)).delete(synchronize_session=False)
 
     db.query(Geofence).filter(Geofence.user_id == current_user.id).delete(synchronize_session=False)
     db.query(AuditLog).filter(AuditLog.user_id == current_user.id).delete(synchronize_session=False)

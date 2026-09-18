@@ -9,6 +9,8 @@ import { LocationHistoryPage } from './pages/LocationHistory';
 import { LiveAudioPage } from './pages/LiveAudio';
 import { CommandsPage } from './pages/Commands';
 import { AuditLogsPage } from './pages/AuditLogs';
+import { GeofencesPage } from './pages/Geofences';
+import { SettingsPage } from './pages/Settings';
 import { authApi } from './services/api';
 import { User } from './types';
 
@@ -18,13 +20,15 @@ export const App: React.FC = () => {
 
   useEffect(() => {
     async function checkAuth() {
-      const token = localStorage.getItem('access_token');
+      const token = localStorage.getItem('token') || localStorage.getItem('access_token');
       if (token) {
         try {
           const u = await authApi.getMe();
           setUser(u);
         } catch (e) {
           console.error('Session restoration failed', e);
+          localStorage.removeItem('token');
+          localStorage.removeItem('access_token');
         }
       }
       setLoading(false);
@@ -54,9 +58,10 @@ export const App: React.FC = () => {
             <Route path="/live" element={user ? <LiveLocationPage /> : <Navigate to="/login" replace />} />
             <Route path="/history" element={user ? <LocationHistoryPage /> : <Navigate to="/login" replace />} />
             <Route path="/audio" element={user ? <LiveAudioPage /> : <Navigate to="/login" replace />} />
-            <Route path="/geofences" element={<Navigate to="/live" replace />} />
+            <Route path="/geofences" element={user ? <GeofencesPage /> : <Navigate to="/login" replace />} />
             <Route path="/commands" element={user ? <CommandsPage /> : <Navigate to="/login" replace />} />
             <Route path="/audit" element={user ? <AuditLogsPage /> : <Navigate to="/login" replace />} />
+            <Route path="/settings" element={user ? <SettingsPage currentUser={user} /> : <Navigate to="/login" replace />} />
 
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

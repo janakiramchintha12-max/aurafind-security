@@ -1,15 +1,15 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from datetime import datetime
 from typing import Optional
 
 class UserCreate(BaseModel):
     email: str
-    password: str
+    password: str = Field(min_length=10, max_length=128)
     full_name: Optional[str] = None
 
 class UserLogin(BaseModel):
     email: str
-    password: str
+    password: str = Field(min_length=1, max_length=128)
 
 class UserResponse(BaseModel):
     id: str
@@ -30,3 +30,7 @@ class TokenRefreshRequest(BaseModel):
 class TokenPayload(BaseModel):
     sub: Optional[str] = None
     type: Optional[str] = None
+
+class UserChangePassword(BaseModel):
+    current_password: str = Field(min_length=1, max_length=128)
+    new_password: str = Field(min_length=10, max_length=128)

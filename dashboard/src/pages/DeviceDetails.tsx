@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Smartphone, Battery, Wifi, Radio, Key, Trash2, ArrowLeft, RefreshCw, MapPin, Bell, BellOff, Lock, Camera, AlertTriangle, ShieldAlert, Volume2, FileText, ShieldCheck, Gauge, Video, Edit3, Save, X, Phone } from 'lucide-react';
-import { devicesApi, commandsApi, snapshotsApi, locationsApi } from '../services/api';
+import { Smartphone, Battery, Wifi, Radio, Key, Trash2, ArrowLeft, RefreshCw, MapPin, Bell, BellOff, Lock, Camera, AlertTriangle, ShieldAlert, Volume2, FileText, ShieldCheck, Gauge, Video, Edit3, Save, X, Phone, QrCode, BarChart3, MessageSquare, Clock } from 'lucide-react';
+import { devicesApi, commandsApi, snapshotsApi, locationsApi, parentalApi } from '../services/api';
 import { Device, Command, Snapshot, LocationRecord } from '../types';
 import { PoliceReportModal } from '../components/PoliceReportModal';
 import { LiveCameraStreamModal } from '../components/LiveCameraStreamModal';
+import { DeviceEnrollmentModal } from '../components/DeviceEnrollmentModal';
 
 export const DeviceDetailsPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -13,6 +14,9 @@ export const DeviceDetailsPage: React.FC = () => {
   const [commands, setCommands] = useState<Command[]>([]);
   const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
   const [locations, setLocations] = useState<LocationRecord[]>([]);
+  const [appUsage, setAppUsage] = useState<any>(null);
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [pairingModalOpen, setPairingModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
 
   // Edit Device & SIM State
@@ -43,6 +47,21 @@ export const DeviceDetailsPage: React.FC = () => {
       setSnapshots(snaps);
       const locs = await locationsApi.getHistory(id, 'today');
       setLocations(locs);
+
+      try {
+        const usageRes = await parentalApi.getAppUsage(id);
+        setAppUsage(usageRes?.has_report ? usageRes.report : null);
+      } catch (e) {
+        // App usage telemetry not pushed yet
+      }
+
+      try {
+        const notifRes = await parentalApi.getNotifications(id);
+        const notifList = Array.isArray(notifRes) ? notifRes : (notifRes?.notifications || []);
+        setNotifications(notifList);
+      } catch (e) {
+        // Notifications stream not pushed yet
+      }
     } catch (e) {
       console.error('Failed to load device details', e);
     } finally {
@@ -138,6 +157,15 @@ export const DeviceDetailsPage: React.FC = () => {
         </button>
 
         <div className="flex items-center space-x-2">
+          <button
+            onClick={() => setPairingModalOpen(true)}
+            className="flex items-center space-x-1.5 px-3 py-1.5 bg-cyan-600/20 hover:bg-cyan-600/30 text-cyan-300 border border-cyan-500/30 rounded-xl text-xs font-bold transition-all cursor-pointer"
+            title="View Device Pairing QR Code & Credentials"
+          >
+            <QrCode className="w-3.5 h-3.5 text-cyan-400" />
+            <span>Pairing QR Code</span>
+          </button>
+
           <button
             onClick={() => setPoliceModalOpen(true)}
             className="flex items-center space-x-1.5 px-3 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold shadow-md transition-all"
@@ -419,6 +447,89 @@ export const DeviceDetailsPage: React.FC = () => {
           )}
         </div>
 
+        {/* Child & Device App Usage / Screen Time Analytics */}
+        <div className="space-y-4 pt-4 border-t border-slate-700/60">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-bold text-white flex items-center space-x-2">
+              <BarChart3 className="w-4 h-4 text-cyan-400" />
+              <span>Handset Screen Time & App Usage</span>
+            </h3>
+            {appUsage?.date && (
+              <span className="text-[11px] font-mono text-slate-400">Date: {appUsage.date}</span>
+            )}
+          </div>
+
+          {!appUsage || !appUsage.apps || appUsage.apps.length === 0 ? (
+            <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-6 text-center text-xs text-slate-400 space-y-1">
+              <p>No app usage telemetry synchronized yet.</p>
+              <p className="text-[11px] text-slate-500">
+                Grant "Usage Access" in the AuraFind Android app settings to enable automated daily screen time reports.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="p-3 bg-slate-900/90 border border-slate-700/60 rounded-xl flex items-center justify-between text-xs">
+                <span className="text-slate-400 font-semibold">Total Screen Time Foreground</span>
+                <span className="text-cyan-400 font-bold font-mono">
+                  {Math.floor(appUsage.total_screen_time_seconds / 3600)}h {Math.floor((appUsage.total_screen_time_seconds % 3600) / 60)}m
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                {appUsage.apps.slice(0, 10).map((app: any, idx: number) => {
+                  const maxSec = appUsage.total_screen_time_seconds || 1;
+                  const pct = Math.min(100, Math.round((app.total_time_foreground_seconds / maxSec) * 100));
+                  return (
+                    <div key={idx} className="bg-slate-900/80 border border-slate-800 rounded-xl p-3 space-y-1.5">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-bold text-white truncate max-w-[180px]">{app.app_name || app.package_name}</span>
+                        <span className="text-slate-400 font-mono text-[11px]">
+                          {Math.floor(app.total_time_foreground_seconds / 60)}m
+                        </span>
+                      </div>
+                      <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                        <div className="bg-cyan-500 h-1.5 rounded-full" style={{ width: `${pct}%` }}></div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Real-time Notification Logs Stream */}
+        <div className="space-y-4 pt-4 border-t border-slate-700/60">
+          <h3 className="text-sm font-bold text-white flex items-center space-x-2">
+            <MessageSquare className="w-4 h-4 text-purple-400" />
+            <span>Captured Handset Notification Stream ({notifications.length})</span>
+          </h3>
+
+          {notifications.length === 0 ? (
+            <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-6 text-center text-xs text-slate-400 space-y-1">
+              <p>No notifications captured yet.</p>
+              <p className="text-[11px] text-slate-500">
+                Grant "Notification Listener" permission in the Android app to intercept emergency incoming alerts and messages.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+              {notifications.slice(0, 30).map((notif: any, i: number) => (
+                <div key={i} className="p-2.5 bg-slate-900/90 border border-slate-800 rounded-xl text-xs space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-cyan-300">{notif.app_name || notif.package_name}</span>
+                    <span className="text-[10px] font-mono text-slate-500">
+                      {notif.timestamp ? new Date(notif.timestamp).toLocaleTimeString() : ''}
+                    </span>
+                  </div>
+                  {notif.title && <div className="font-semibold text-white text-[11px]">{notif.title}</div>}
+                  <div className="text-slate-400 text-[11px]">{notif.text}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
       </div>
 
       {/* Voice Warning Broadcast Modal */}
@@ -598,6 +709,16 @@ export const DeviceDetailsPage: React.FC = () => {
             </form>
           </div>
         </div>
+      )}
+
+      {/* Device Pairing / Enrollment Modal */}
+      {device && (
+        <DeviceEnrollmentModal
+          isOpen={pairingModalOpen}
+          initialDevice={device}
+          onClose={() => setPairingModalOpen(false)}
+          onSuccess={fetchDetails}
+        />
       )}
 
     </div>

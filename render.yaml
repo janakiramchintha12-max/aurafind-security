@@ -8,7 +8,19 @@ services:
     envVars:
       - key: SECRET_KEY
         generateValue: true
+      - key: ENVIRONMENT
+        value: production
+      - key: ENABLE_DEV_SEEDS
+        value: "false"
+      - key: ENABLE_API_DOCS
+        value: "false"
       - key: DATABASE_URL
-        value: sqlite:///./findmydevice.db
+        fromDatabase:
+          name: aurafind-db
+          property: connectionString
       - key: ACCESS_TOKEN_EXPIRE_MINUTES
         value: 1440
+databases:
+  - name: aurafind-db
+    plan: free
+    region: oregon

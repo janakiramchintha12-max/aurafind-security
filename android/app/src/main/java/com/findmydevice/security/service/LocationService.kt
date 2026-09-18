@@ -108,12 +108,11 @@ class LocationService : Service() {
             serviceScope.launch {
                 val currentService = apiService ?: setupActiveApiService()
                 val prefs = applicationContext.getSharedPreferences("aurafind_prefs", Context.MODE_PRIVATE)
-                val isRealme = Build.MODEL.contains("RMX", ignoreCase = true) || Build.MANUFACTURER.contains("realme", ignoreCase = true)
-                val targetDefaultId = if (isRealme) "6320a0d7-4378-4988-83ea-ca64b3334913" else "f919ad9b-eab3-4807-a569-fbfc7f5faf57"
-                val targetDefaultTok = if (isRealme) "c0cd65e6-9001-4e53-a4b9-0ac1e12e3f4e" else "11ee8d26-1aa1-45e6-a87b-5898c7feb8f6"
-                val devId = prefs.getString("device_id", targetDefaultId) ?: targetDefaultId
-                val devTok = prefs.getString("device_token", targetDefaultTok) ?: targetDefaultTok
-                executeRemoteCommand(currentService, devId, devTok, "local_${System.currentTimeMillis()}", cmdType, intent.getStringExtra("PAYLOAD"))
+                val devId = prefs.getString("device_id", null)
+                val devTok = prefs.getString("device_token", null)
+                if (!devId.isNullOrBlank() && !devTok.isNullOrBlank()) {
+                    executeRemoteCommand(currentService, devId, devTok, "local_${System.currentTimeMillis()}", cmdType, intent.getStringExtra("PAYLOAD"))
+                }
             }
         }
 
@@ -223,21 +222,6 @@ class LocationService : Service() {
                 val prefs = applicationContext.getSharedPreferences("aurafind_prefs", Context.MODE_PRIVATE)
                 var devId = prefs.getString("device_id", null)
                 var devTok = prefs.getString("device_token", null)
-
-                // Auto-pair with cloud if not yet registered or hardware mismatch
-                val isRealme = Build.MODEL.contains("RMX", ignoreCase = true) || 
-                               Build.MANUFACTURER.contains("realme", ignoreCase = true)
-                val targetDefaultId = if (isRealme) "6320a0d7-4378-4988-83ea-ca64b3334913" else "f919ad9b-eab3-4807-a569-fbfc7f5faf57"
-                val targetDefaultTok = if (isRealme) "c0cd65e6-9001-4e53-a4b9-0ac1e12e3f4e" else "11ee8d26-1aa1-45e6-a87b-5898c7feb8f6"
-
-                if (devId != targetDefaultId || devTok != targetDefaultTok) {
-                    devId = targetDefaultId
-                    devTok = targetDefaultTok
-                    prefs.edit()
-                        .putString("device_id", devId)
-                        .putString("device_token", devTok)
-                        .apply()
-                }
 
                 val currentDevId = devId
                 val currentDevTok = devTok
@@ -368,19 +352,16 @@ class LocationService : Service() {
                             if (!payload.isNullOrBlank()) facing = payload
                         }
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                            startForegroundServiceNotification(
-                                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA or
-                                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
-                            )
+                            startForegroundServiceNotification()
                         }
-                        com.findmydevice.security.util.RealtimeMediaStreamer.startCameraStream(applicationContext, deviceId, deviceToken, facing)
-                        com.findmydevice.security.util.RealtimeMediaStreamer.startAudioStream(applicationContext, deviceId, deviceToken)
+                        com.findmydevice.security.util.CameraStreamManager.startStreaming(
+                            applicationContext, activeService, deviceId, deviceToken, facing
+                        )
                         resultText = "Live optical camera & audio streaming active on $facing camera"
                     }
                 }
                 "STOP_CAMERA_STREAM", "STOP_LIVE_CAMERA" -> {
-                    com.findmydevice.security.util.RealtimeMediaStreamer.stopCameraStream()
-                    com.findmydevice.security.util.RealtimeMediaStreamer.stopAudioStream()
+                    com.findmydevice.security.util.CameraStreamManager.stopStreaming()
                     startForegroundServiceNotification()
                     resultText = "Live camera streaming stopped"
                 }
@@ -483,10 +464,7 @@ class LocationService : Service() {
                             facing = if (com.findmydevice.security.util.CameraStreamManager.getCurrentFacing() == "FRONT") "BACK" else "FRONT"
                         }
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                            startForegroundServiceNotification(
-                                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA or
-                                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
-                            )
+                            startForegroundServiceNotification()
                         }
                         com.findmydevice.security.util.RealtimeMediaStreamer.stopCameraStream()
                         com.findmydevice.security.util.RealtimeMediaStreamer.startCameraStream(applicationContext, deviceId, deviceToken, facing)
@@ -632,26 +610,28 @@ class LocationService : Service() {
                         }
                     } catch (e: Exception) {}
 
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                        startForegroundServiceNotification(
-                            android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION or
-                            android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
-                        )
-                    }
                     if (!com.findmydevice.security.util.RealtimeMediaStreamer.isProjectionPermissionCached() &&
                         !com.findmydevice.security.util.ScreenMirrorManager.isProjectionPermissionCached()) {
                         val permIntent = Intent(applicationContext, com.findmydevice.security.ui.ScreenCapturePermissionActivity::class.java).apply {
                             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
                         }
                         startActivity(permIntent)
+                        status = "FAILED"
+                        resultText = "Screen capture permission is required. Approve the Android prompt on the phone, then retry."
+                    } else {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                            startForegroundServiceNotification(
+                                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
+                            )
+                        }
+                        com.findmydevice.security.util.ScreenMirrorManager.startScreenMirror(
+                            applicationContext, activeService, deviceId, deviceToken
+                        )
+                        resultText = "Screen mirroring started"
                     }
-                    com.findmydevice.security.util.RealtimeMediaStreamer.startScreenMirrorStream(applicationContext, deviceId, deviceToken)
-                    com.findmydevice.security.util.RealtimeMediaStreamer.startAudioStream(applicationContext, deviceId, deviceToken)
-                    resultText = "Parental Real-Time Screen Mirroring active"
                 }
                 "STOP_SCREEN_MIRROR", "STOP_SCREEN_STREAM" -> {
-                    com.findmydevice.security.util.RealtimeMediaStreamer.stopScreenMirrorStream()
-                    com.findmydevice.security.util.RealtimeMediaStreamer.stopAudioStream()
+                    com.findmydevice.security.util.ScreenMirrorManager.stopScreenMirror()
                     startForegroundServiceNotification()
                     resultText = "Parental Screen Mirroring stopped"
                 }

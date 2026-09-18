@@ -7,7 +7,8 @@ from pydantic import BaseModel
 from typing import Optional, Dict, Set
 from app.database.session import get_db
 from app.models.device import Device
-from app.api.v1.deps import verify_device_ownership
+from app.api.v1.deps import verify_device_ownership, get_current_user
+from app.models.user import User
 from app.services.websocket_manager import manager
 
 router = APIRouter()
@@ -43,6 +44,8 @@ async def push_screen_frame(
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid device credentials")
         if device.enrollment_status == "REVOKED":
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Device enrollment has been revoked")
+        if device.remote_controls_state == "PAUSED_BY_DEVICE_USER":
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Screen sharing is paused by device user")
         user_id = device.user_id
         screen_auth_cache[f"{device_id}:{x_device_token}"] = user_id
 
@@ -90,6 +93,8 @@ def get_latest_screen_frame(
 ):
     if device.enrollment_status == "REVOKED":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Device enrollment has been revoked")
+    if device.remote_controls_state == "PAUSED_BY_DEVICE_USER":
+        return {"has_frame": False, "image_data": None, "privacy_state": "PAUSED_BY_DEVICE_USER"}
 
     frame = latest_screen_frames.get(device.id)
     if not frame:
@@ -99,7 +104,7 @@ def get_latest_screen_frame(
 @router.get("/{device_id}/screen/mjpeg")
 async def stream_mjpeg_screen(
     device_id: str,
-    token: Optional[str] = Query(None),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -109,9 +114,13 @@ async def stream_mjpeg_screen(
     device = db.query(Device).filter(Device.id == device_id).first()
     if not device:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found")
+    if device.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
     if device.enrollment_status == "REVOKED":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Device enrollment has been revoked")
+    if device.remote_controls_state == "PAUSED_BY_DEVICE_USER":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Screen sharing is paused by device user")
 
     queue = asyncio.Queue(maxsize=10)
     if device_id not in screen_stream_queues:

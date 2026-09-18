@@ -1,8 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, RefreshCw, Smartphone, ShieldCheck, AlertTriangle } from 'lucide-react';
+import { 
+  Plus, RefreshCw, Smartphone, ShieldCheck, AlertTriangle, 
+  Download, QrCode, Shield, Compass, Video, Volume2, Key, Radio 
+} from 'lucide-react';
 import { devicesApi, commandsApi, connectWebSocket } from '../services/api';
 import { Device } from '../types';
 import { DeviceCard } from '../components/DeviceCard';
+import { DeviceEnrollmentModal } from '../components/DeviceEnrollmentModal';
 import { LiveCameraStreamModal } from '../components/LiveCameraStreamModal';
 import { LiveScreenMirrorModal } from '../components/LiveScreenMirrorModal';
 import { VoiceCallModal } from '../components/VoiceCallModal';
@@ -13,14 +17,13 @@ import { LiveDiagnosticsPanel } from '../components/LiveDiagnosticsPanel';
 export const DashboardPage: React.FC = () => {
   const [devices, setDevices] = useState<Device[]>([]);
   const [loading, setLoading] = useState(true);
-  const [registerOpen, setRegisterOpen] = useState(false);
+  const [enrollmentOpen, setEnrollmentOpen] = useState(false);
+  const [enrollmentDevice, setEnrollmentDevice] = useState<Device | null>(null);
   const [activeCameraDevice, setActiveCameraDevice] = useState<Device | null>(null);
   const [activeScreenMirrorDevice, setActiveScreenMirrorDevice] = useState<Device | null>(null);
   const [activeVoiceDevice, setActiveVoiceDevice] = useState<Device | null>(null);
   const [activeTtsDevice, setActiveTtsDevice] = useState<Device | null>(null);
   const [activeReportDevice, setActiveReportDevice] = useState<Device | null>(null);
-  const [newDevName, setNewDevName] = useState('');
-  const [newDevModel, setNewDevModel] = useState('Pixel 8 Pro');
   const [alertMsg, setAlertMsg] = useState<{ text: string; type: 'info' | 'success' | 'error' } | null>(null);
 
   const fetchDevices = async () => {
@@ -120,18 +123,9 @@ export const DashboardPage: React.FC = () => {
     }
   };
 
-  const handleRegisterDevice = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newDevName) return;
-    try {
-      await devicesApi.register(newDevName, newDevModel, '14.0');
-      setNewDevName('');
-      setRegisterOpen(false);
-      fetchDevices();
-      setAlertMsg({ text: 'Device registered successfully', type: 'success' });
-    } catch (e) {
-      setAlertMsg({ text: 'Failed to register device', type: 'error' });
-    }
+  const handleOpenEnrollment = (dev: Device | null = null) => {
+    setEnrollmentDevice(dev);
+    setEnrollmentOpen(true);
   };
 
   const onlineCount = devices.filter(d => d.status === 'ONLINE').length;
@@ -150,18 +144,18 @@ export const DashboardPage: React.FC = () => {
         <div className="flex items-center space-x-3">
           <button
             onClick={fetchDevices}
-            className="p-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-xl transition-all"
+            className="p-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-xl transition-all cursor-pointer"
             title="Refresh Devices"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
           
           <button
-            onClick={() => setRegisterOpen(true)}
-            className="flex items-center space-x-2 px-4 py-2.5 bg-cyan-600 hover:bg-cyan-500 text-white font-semibold rounded-xl text-sm shadow-lg shadow-cyan-600/30 transition-all"
+            onClick={() => handleOpenEnrollment(null)}
+            className="flex items-center space-x-2 px-4 py-2.5 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-semibold rounded-xl text-sm shadow-lg shadow-cyan-600/30 transition-all cursor-pointer"
           >
             <Plus className="w-4 h-4" />
-            <span>Register Device</span>
+            <span>Pair New Device</span>
           </button>
         </div>
       </div>
@@ -221,18 +215,78 @@ export const DashboardPage: React.FC = () => {
       {loading ? (
         <div className="text-center py-16 text-slate-400">Loading devices...</div>
       ) : devices.length === 0 ? (
-        <div className="bg-slate-800/40 border border-slate-700/60 rounded-2xl p-12 text-center space-y-3">
-          <Smartphone className="w-12 h-12 mx-auto text-slate-500" />
-          <h3 className="text-lg font-bold text-white">No devices registered yet</h3>
-          <p className="text-sm text-slate-400 max-w-sm mx-auto">
-            Click "Register Device" to add your primary phone, backup phone, tablet, or spare phone.
-          </p>
-          <button
-            onClick={() => setRegisterOpen(true)}
-            className="px-4 py-2 bg-cyan-600 text-white text-sm font-semibold rounded-xl"
-          >
-            Register First Device
-          </button>
+        <div className="space-y-6">
+          {/* Hero Welcome Banner */}
+          <div className="bg-gradient-to-br from-slate-800/90 via-slate-900/90 to-cyan-950/40 border border-slate-700/80 rounded-3xl p-8 sm:p-10 shadow-2xl backdrop-blur relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-96 h-96 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none"></div>
+            
+            <div className="max-w-2xl space-y-4 relative z-10">
+              <div className="inline-flex items-center space-x-2 px-3 py-1 bg-cyan-500/10 border border-cyan-500/30 rounded-full text-cyan-400 text-xs font-bold">
+                <Shield className="w-3.5 h-3.5" />
+                <span>Next-Gen Anti-Theft & Handset Security</span>
+              </div>
+
+              <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+                Protect & Track Your Handset in Real-Time
+              </h2>
+
+              <p className="text-slate-300 text-xs sm:text-sm leading-relaxed">
+                Connect your personal Android phone, family devices, or backup phones to monitor live GPS satellite location, stream dual cameras in HD, mirror screen, and sound loud anti-theft alarms.
+              </p>
+
+              <div className="flex flex-wrap items-center gap-3 pt-2">
+                <button
+                  onClick={() => handleOpenEnrollment(null)}
+                  className="px-6 py-3 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold text-xs sm:text-sm rounded-xl shadow-xl shadow-cyan-600/30 transition-all flex items-center space-x-2 cursor-pointer"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Pair First Android Device</span>
+                </button>
+
+                <a
+                  href="/download/app.apk"
+                  download="AuraFind-Security.apk"
+                  className="px-5 py-3 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-semibold text-xs sm:text-sm rounded-xl transition-all flex items-center space-x-2"
+                >
+                  <Download className="w-4 h-4 text-cyan-400" />
+                  <span>Download APK Client</span>
+                </a>
+              </div>
+            </div>
+          </div>
+
+          {/* 3 Simple Setup Steps */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-5 space-y-2.5">
+              <div className="w-8 h-8 rounded-xl bg-cyan-500/20 text-cyan-400 font-black text-xs flex items-center justify-center">
+                1
+              </div>
+              <h3 className="text-sm font-bold text-white">Install Handset APK</h3>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                Download and install the lightweight APK client on your Android device (Android 8 to Android 14).
+              </p>
+            </div>
+
+            <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-5 space-y-2.5">
+              <div className="w-8 h-8 rounded-xl bg-cyan-500/20 text-cyan-400 font-black text-xs flex items-center justify-center">
+                2
+              </div>
+              <h3 className="text-sm font-bold text-white">Scan Pairing QR Code</h3>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                Click "Pair First Android Device" above to generate your instant QR code and pairing credentials.
+              </p>
+            </div>
+
+            <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-5 space-y-2.5">
+              <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 font-black text-xs flex items-center justify-center">
+                3
+              </div>
+              <h3 className="text-sm font-bold text-white">Continuous Protection</h3>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                Receive live GPS fixes, intruder selfies upon wrong PINs, remote siren override, and route history.
+              </p>
+            </div>
+          </div>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -251,6 +305,7 @@ export const DashboardPage: React.FC = () => {
               onOpenVoiceCall={(dev) => setActiveVoiceDevice(dev)}
               onOpenTts={(dev) => setActiveTtsDevice(dev)}
               onOpenPoliceReport={(dev) => setActiveReportDevice(dev)}
+              onOpenPairing={(dev) => handleOpenEnrollment(dev)}
             />
           ))}
         </div>
@@ -296,56 +351,18 @@ export const DashboardPage: React.FC = () => {
         />
       )}
 
-      {/* Register Device Modal */}
-      {registerOpen && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 max-w-md w-full shadow-2xl">
-            <h3 className="text-lg font-bold text-white mb-1">Register New Device</h3>
-            <p className="text-xs text-slate-400 mb-4">Assign a clear user-defined name for tracking</p>
-
-            <form onSubmit={handleRegisterDevice} className="space-y-4">
-              <div>
-                <label className="block text-xs text-slate-300 mb-1">Device Name</label>
-                <input
-                  type="text"
-                  placeholder="e.g. My Main Phone, Spare Tablet"
-                  value={newDevName}
-                  onChange={(e) => setNewDevName(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs text-slate-300 mb-1">Device Model</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Pixel 8, Galaxy S24"
-                  value={newDevModel}
-                  onChange={(e) => setNewDevModel(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500"
-                />
-              </div>
-
-              <div className="flex justify-end space-x-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setRegisterOpen(false)}
-                  className="px-4 py-2 bg-slate-700 text-slate-300 text-xs font-semibold rounded-xl hover:bg-slate-600"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold rounded-xl"
-                >
-                  Confirm Registration
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      {/* Device Enrollment / Pairing Modal */}
+      <DeviceEnrollmentModal
+        isOpen={enrollmentOpen}
+        initialDevice={enrollmentDevice}
+        onClose={() => {
+          setEnrollmentOpen(false);
+          setEnrollmentDevice(null);
+        }}
+        onSuccess={() => {
+          fetchDevices();
+        }}
+      />
 
     </div>
   );

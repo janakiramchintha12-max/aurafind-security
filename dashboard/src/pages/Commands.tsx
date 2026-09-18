@@ -68,7 +68,22 @@ export const CommandsPage: React.FC = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      {devices.length === 0 ? (
+        <div className="bg-slate-800/80 border border-slate-700/80 rounded-2xl p-12 text-center space-y-3 shadow-xl">
+          <Radio className="w-12 h-12 mx-auto text-slate-500" />
+          <h3 className="text-lg font-bold text-white">No Devices Available for Command Dispatch</h3>
+          <p className="text-xs text-slate-400 max-w-md mx-auto">
+            Pair an Android device on the Overview dashboard to issue tactical remote commands (LOCATE_NOW, PLAY_ALARM, CAPTURE_SNAPSHOT, SPEAK_TEXT).
+          </p>
+          <a
+            href="/"
+            className="inline-flex items-center space-x-2 px-5 py-2.5 bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-cyan-600/30 transition-all"
+          >
+            <span>Go to Dashboard to Pair Device</span>
+          </a>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
         {/* Dispatch Form */}
         <div className="bg-slate-800/80 border border-slate-700/60 rounded-2xl p-6 shadow-xl space-y-4">
@@ -175,6 +190,7 @@ export const CommandsPage: React.FC = () => {
         </div>
 
       </div>
+      )}
     </div>
   );
 };

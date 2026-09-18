@@ -322,6 +322,23 @@ export const LiveLocationPage: React.FC = () => {
         </div>
       </div>
 
+      {/* Zero Devices Empty State Banner */}
+      {!loading && devices.length === 0 && (
+        <div className="bg-slate-800/80 border border-slate-700/80 rounded-2xl p-8 text-center space-y-3 shadow-xl">
+          <Smartphone className="w-10 h-10 mx-auto text-slate-500" />
+          <h3 className="text-base font-bold text-white">No Android Devices Paired Yet</h3>
+          <p className="text-xs text-slate-400 max-w-md mx-auto">
+            Pair an Android device on the Overview dashboard to view live GPS satellite telemetry, walking radar distance, and compass heading.
+          </p>
+          <a
+            href="/"
+            className="inline-flex items-center space-x-2 px-5 py-2.5 bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-cyan-600/30 transition-all"
+          >
+            <span>Go to Dashboard to Pair Device</span>
+          </a>
+        </div>
+      )}
+
       {/* Cockpit HUD */}
       {rangeMode === 'device_only' ? (
         /* Single Device Pure Satellite HUD */

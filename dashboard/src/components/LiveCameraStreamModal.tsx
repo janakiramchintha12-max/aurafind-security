@@ -75,7 +75,7 @@ export const LiveCameraStreamModal: React.FC<LiveCameraStreamModalProps> = ({ de
   const [rotationDegrees, setRotationDegrees] = useState<number>(0);
   const [isMirrored, setIsMirrored] = useState<boolean>(false);
   const [enhanceFilter, setEnhanceFilter] = useState<boolean>(true);
-  const [streamEngine, setStreamEngine] = useState<'HARDWARE_H264' | 'SMOOTH_BUFFER' | 'NATIVE_MJPEG' | 'DIRECT_LIVE'>('HARDWARE_H264');
+  const [streamEngine, setStreamEngine] = useState<'HARDWARE_H264' | 'SMOOTH_BUFFER' | 'NATIVE_MJPEG' | 'DIRECT_LIVE'>('NATIVE_MJPEG');
   const [bufferDelayMs, setBufferDelayMs] = useState<number>(2500); // 2.5s smooth playout delay
   const [displayFps, setDisplayFps] = useState<number>(60);
   const [bufferQueueDepth, setBufferQueueDepth] = useState<number>(0);
@@ -432,7 +432,8 @@ export const LiveCameraStreamModal: React.FC<LiveCameraStreamModalProps> = ({ de
     return `${mins.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
-  const mjpegStreamUrl = `/api/v1/devices/${device.id}/camera/mjpeg`;
+  const authToken = localStorage.getItem('token') || localStorage.getItem('access_token') || '';
+  const mjpegStreamUrl = `/api/v1/devices/${device.id}/camera/mjpeg?token=${encodeURIComponent(authToken)}`;
 
   return (
     <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-lg flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
@@ -861,5 +862,4 @@ export const LiveCameraStreamModal: React.FC<LiveCameraStreamModalProps> = ({ de
     </div>
   );
 };
-
 

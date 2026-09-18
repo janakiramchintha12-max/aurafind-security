@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from typing import Optional, Dict, Set
 from app.database.session import get_db
 from app.models.device import Device
+from app.models.user import User
 from app.api.v1.deps import verify_device_ownership, get_current_user
 from app.services.websocket_manager import manager
 
@@ -117,7 +118,7 @@ def get_latest_camera_frame(
 @router.get("/{device_id}/camera/mjpeg")
 async def stream_mjpeg_video(
     device_id: str,
-    token: Optional[str] = Query(None),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -127,6 +128,8 @@ async def stream_mjpeg_video(
     device = db.query(Device).filter(Device.id == device_id).first()
     if not device:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found")
+    if device.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
     if device.enrollment_status == "REVOKED":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Device enrollment has been revoked")
@@ -186,4 +189,3 @@ async def stream_mjpeg_video(
         frame_generator(),
         media_type="multipart/x-mixed-replace; boundary=frame"
     )
-

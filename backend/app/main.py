@@ -13,6 +13,9 @@ from app.core.security import decode_token
 Base.metadata.create_all(bind=engine)
 
 def seed_default_admin():
+    if not settings.ENABLE_DEV_SEEDS:
+        return
+
     from app.database.session import SessionLocal
     from app.models.user import User
     from app.models.device import Device
@@ -20,7 +23,7 @@ def seed_default_admin():
 
     db = SessionLocal()
     try:
-        # 1. Seed or Update Janakiram12 Account
+        # Development-only accounts. Never create these in production.
         janaki_user = db.query(User).filter(User.email == "janakiram12").first()
         if not janaki_user:
             janaki_user = User(
@@ -47,69 +50,6 @@ def seed_default_admin():
             )
             db.add(admin_user)
             db.commit()
-
-        # 2. Seed Permanent Enrolled Realme Device
-        from datetime import datetime, timezone
-        realme_device = db.query(Device).filter(Device.id == "6320a0d7-4378-4988-83ea-ca64b3334913").first()
-        if not realme_device:
-            realme_device = Device(
-                id="6320a0d7-4378-4988-83ea-ca64b3334913",
-                user_id=janaki_user.id,
-                device_token="c0cd65e6-9001-4e53-a4b9-0ac1e12e3f4e",
-                device_name="Realme 13 5G",
-                device_model="Realme RMX5070",
-                android_version="14.0",
-                app_version="1.0.0",
-                status="ONLINE",
-                enrollment_status="ENROLLED",
-                battery_pct=88.0,
-                network_type="CELLULAR",
-                wifi_status=False,
-                sim_status=True,
-                sim_number=None,
-                gps_status=True,
-                last_latitude=14.0413359,
-                last_longitude=79.2624539,
-                last_sync_time=datetime.now(timezone.utc),
-                last_heartbeat=datetime.now(timezone.utc)
-            )
-            db.add(realme_device)
-        else:
-            realme_device.gps_status = True
-            realme_device.status = "ONLINE"
-            realme_device.last_sync_time = datetime.now(timezone.utc)
-            realme_device.last_heartbeat = datetime.now(timezone.utc)
-
-        # 3. Seed Permanent Enrolled Motorola Edge 50 Fusion Device
-        moto_device = db.query(Device).filter(Device.id == "f919ad9b-eab3-4807-a569-fbfc7f5faf57").first()
-        if not moto_device:
-            moto_device = Device(
-                id="f919ad9b-eab3-4807-a569-fbfc7f5faf57",
-                user_id=janaki_user.id,
-                device_token="11ee8d26-1aa1-45e6-a87b-5898c7feb8f6",
-                device_name="Motorola Edge 50 Fusion",
-                device_model="motorola edge 50 fusion",
-                android_version="14.0",
-                app_version="1.0.0",
-                status="ONLINE",
-                enrollment_status="ENROLLED",
-                battery_pct=94.0,
-                network_type="WIFI",
-                wifi_status=True,
-                sim_status=True,
-                sim_number=None,
-                gps_status=True,
-                last_latitude=14.566613,
-                last_longitude=78.745297,
-                last_sync_time=datetime.now(timezone.utc),
-                last_heartbeat=datetime.now(timezone.utc)
-            )
-            db.add(moto_device)
-        else:
-            moto_device.gps_status = True
-            moto_device.status = "ONLINE"
-            moto_device.last_sync_time = datetime.now(timezone.utc)
-            moto_device.last_heartbeat = datetime.now(timezone.utc)
 
         # Ensure admin accounts exist
         db.commit()
@@ -228,7 +168,7 @@ def download_app_apk():
     for p in possible_paths:
         if os.path.exists(p):
             return FileResponse(p, media_type="application/vnd.android.package-archive", filename="AuraFind-Security.apk")
-    return {"error": "APK not found"}
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="APK is not available")
 
 @app.websocket("/api/v1/ws")
 async def websocket_endpoint(

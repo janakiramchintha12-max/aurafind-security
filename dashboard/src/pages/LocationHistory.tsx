@@ -453,6 +453,22 @@ export const LocationHistoryPage: React.FC = () => {
         </div>
       </div>
 
+      {devices.length === 0 ? (
+        <div className="bg-slate-800/80 border border-slate-700/80 rounded-2xl p-12 text-center space-y-3 shadow-xl">
+          <Milestone className="w-12 h-12 mx-auto text-slate-500" />
+          <h3 className="text-lg font-bold text-white">No Route History Available</h3>
+          <p className="text-xs text-slate-400 max-w-md mx-auto">
+            Pair an Android device on the Overview dashboard to start recording continuous GPS traces, breadcrumb waypoints, and animated playback.
+          </p>
+          <a
+            href="/"
+            className="inline-flex items-center space-x-2 px-5 py-2.5 bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-cyan-600/30 transition-all"
+          >
+            <span>Go to Dashboard to Pair Device</span>
+          </a>
+        </div>
+      ) : (
+        <>
       {/* Control Panel: Device Selector & Continuous Journey Status */}
       <div className="bg-slate-800/90 border border-slate-700/80 rounded-3xl p-5 sm:p-6 shadow-2xl space-y-4">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -885,6 +901,8 @@ export const LocationHistoryPage: React.FC = () => {
         </div>
 
       </div>
+      </>
+      )}
     </div>
   );
 };

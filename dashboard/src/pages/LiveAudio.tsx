@@ -713,6 +713,22 @@ export const LiveAudioPage: React.FC = () => {
         </div>
       </div>
 
+      {devices.length === 0 ? (
+        <div className="bg-slate-800/80 border border-slate-700/80 rounded-2xl p-12 text-center space-y-3 shadow-xl">
+          <Headphones className="w-12 h-12 mx-auto text-slate-500" />
+          <h3 className="text-lg font-bold text-white">No Audio Devices Available</h3>
+          <p className="text-xs text-slate-400 max-w-md mx-auto">
+            Pair an Android device on the Overview dashboard to listen to live microphone audio, broadcast two-way loudspeaker voice messages, and record audio clips.
+          </p>
+          <a
+            href="/"
+            className="inline-flex items-center space-x-2 px-5 py-2.5 bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-cyan-600/30 transition-all"
+          >
+            <span>Go to Dashboard to Pair Device</span>
+          </a>
+        </div>
+      ) : (
+        <>
       {/* Hero Card: ON-DEMAND HD AUDIO RECORDING (Primary Feature) */}
       <div className="bg-gradient-to-br from-slate-900 via-slate-800/95 to-slate-900 border border-cyan-500/40 rounded-3xl p-6 sm:p-8 shadow-2xl relative overflow-hidden">
         <div className="absolute top-0 right-0 w-96 h-96 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none"></div>
@@ -1108,6 +1124,8 @@ export const LiveAudioPage: React.FC = () => {
         </div>
 
       </div>
+      </>
+      )}
     </div>
   );
 };

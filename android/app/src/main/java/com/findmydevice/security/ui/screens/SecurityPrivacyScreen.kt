@@ -32,7 +32,7 @@ fun SecurityPrivacyScreen() {
     var locationPaused by remember { mutableStateOf(PrivacyManager.isLocationPaused(context)) }
     var speakerPaused by remember { mutableStateOf(PrivacyManager.isSpeakerPaused(context)) }
     var controlsRestricted by remember { mutableStateOf(PrivacyManager.isControlsRestricted(context)) }
-    var fakeShutdownEnabled by remember { mutableStateOf(prefs.getBoolean("fake_shutdown_enabled", true)) }
+    var fakeShutdownEnabled by remember { mutableStateOf(prefs.getBoolean("fake_shutdown_enabled", false)) }
     var isAccessibilityEnabled by remember { mutableStateOf(AuraFindAccessibilityService.isAccessibilityServiceEnabled(context)) }
     var activityLogs by remember { mutableStateOf(PrivacyManager.getActivityLogs(context)) }
 

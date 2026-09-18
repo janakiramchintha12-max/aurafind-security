@@ -26,8 +26,9 @@ interface LiveScreenMirrorModalProps {
 export const LiveScreenMirrorModal: React.FC<LiveScreenMirrorModalProps> = ({ device, onClose }) => {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [rotationDegrees, setRotationDegrees] = useState<number>(0);
-  const [streamEngine, setStreamEngine] = useState<'HARDWARE_H264' | 'NATIVE_MJPEG' | 'SMOOTH_BUFFER'>('HARDWARE_H264');
+  const [streamEngine, setStreamEngine] = useState<'HARDWARE_H264' | 'NATIVE_MJPEG' | 'SMOOTH_BUFFER'>('NATIVE_MJPEG');
   const [hasReceivedFirstFrame, setHasReceivedFirstFrame] = useState<boolean>(false);
+  const [streamError, setStreamError] = useState<string | null>(null);
   const [ambientAudioActive, setAmbientAudioActive] = useState<boolean>(false);
   const [streamStats, setStreamStats] = useState({ fps: 60, latencyMs: 35, kbps: 1200, resolution: '720p' });
 
@@ -73,7 +74,8 @@ export const LiveScreenMirrorModal: React.FC<LiveScreenMirrorModalProps> = ({ de
     }
   };
 
-  const mjpegUrl = `${screenApi.getMjpegUrl(device.id)}?t=${Date.now()}`;
+  const authToken = localStorage.getItem('token') || localStorage.getItem('access_token') || '';
+  const mjpegUrl = `${screenApi.getMjpegUrl(device.id)}?token=${encodeURIComponent(authToken)}&t=${Date.now()}`;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-950/85 backdrop-blur-md animate-in fade-in duration-200">
@@ -155,9 +157,20 @@ export const LiveScreenMirrorModal: React.FC<LiveScreenMirrorModalProps> = ({ de
               style={{
                 transform: `rotate(${rotationDegrees}deg)`
               }}
-              onLoad={() => setHasReceivedFirstFrame(true)}
-              onError={() => setStreamEngine('HARDWARE_H264')}
+              onLoad={() => {
+                setStreamError(null);
+                setHasReceivedFirstFrame(true);
+              }}
+              onError={() => {
+                setHasReceivedFirstFrame(false);
+                setStreamError('No screen frames are reaching the dashboard. Approve screen capture on the phone and retry.');
+              }}
             />
+          )}
+          {streamError && (
+            <div className="absolute inset-x-4 bottom-4 rounded-xl border border-rose-500/40 bg-rose-950/90 px-4 py-3 text-sm text-rose-100">
+              {streamError}
+            </div>
           )}
         </div>
 

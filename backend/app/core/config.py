@@ -9,10 +9,10 @@ class Settings(BaseSettings):
     API_V1_STR: str = "/api/v1"
     
     # Environment & Debug
-    ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development").lower()
+    ENVIRONMENT: str = os.getenv("ENVIRONMENT", "production").lower()
     DEBUG: bool = os.getenv("DEBUG", "false").lower() == "true"
-    ENABLE_DEV_SEEDS: bool = os.getenv("ENABLE_DEV_SEEDS", "true" if os.getenv("ENVIRONMENT", "development").lower() == "development" else "false").lower() == "true"
-    ENABLE_API_DOCS: bool = os.getenv("ENABLE_API_DOCS", "true" if os.getenv("ENVIRONMENT", "development").lower() != "production" else "false").lower() == "true"
+    ENABLE_DEV_SEEDS: bool = os.getenv("ENABLE_DEV_SEEDS", "false").lower() == "true"
+    ENABLE_API_DOCS: bool = os.getenv("ENABLE_API_DOCS", "false").lower() == "true"
 
     # Cryptography & Auth
     SECRET_KEY: str = os.getenv("SECRET_KEY", "super-secret-key-change-in-production-32bytes-min!")
@@ -70,4 +70,3 @@ if settings.ENVIRONMENT == "production":
     if settings.SECRET_KEY == "super-secret-key-change-in-production-32bytes-min!" or len(settings.SECRET_KEY) < 32:
         import warnings
         warnings.warn("CRITICAL SECURITY WARNING: Production SECRET_KEY is using default placeholder or is under 32 bytes! Set SECRET_KEY in environment variables.", UserWarning)
-

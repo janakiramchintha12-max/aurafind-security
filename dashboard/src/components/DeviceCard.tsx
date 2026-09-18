@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Smartphone, Battery, BatteryCharging, Wifi, WifiOff, Radio, MapPin, Bell, BellOff, RefreshCw, ChevronRight, Lock, AlertTriangle, Camera, Phone, Shield, FileText, Edit3, Save, X, Tv } from 'lucide-react';
+import { Smartphone, Battery, BatteryCharging, Wifi, WifiOff, Radio, MapPin, Bell, BellOff, RefreshCw, ChevronRight, Lock, AlertTriangle, Camera, Phone, Shield, FileText, Edit3, Save, X, Tv, QrCode } from 'lucide-react';
 import { Device } from '../types';
 import { devicesApi } from '../services/api';
 
@@ -17,9 +17,10 @@ interface DeviceCardProps {
   onOpenVoiceCall?: (device: Device) => void;
   onOpenTts?: (device: Device) => void;
   onOpenPoliceReport?: (device: Device) => void;
+  onOpenPairing?: (device: Device) => void;
 }
 
-export const DeviceCard: React.FC<DeviceCardProps> = ({ device, onLocate, onRing, onStopRing, onToggleLostMode, onSync, onTakeSelfie, onOpenLiveCamera, onOpenScreenMirror, onOpenVoiceCall, onOpenTts, onOpenPoliceReport }) => {
+export const DeviceCard: React.FC<DeviceCardProps> = ({ device, onLocate, onRing, onStopRing, onToggleLostMode, onSync, onTakeSelfie, onOpenLiveCamera, onOpenScreenMirror, onOpenVoiceCall, onOpenTts, onOpenPoliceReport, onOpenPairing }) => {
   const isOnline = device.status === 'ONLINE';
 
   // Edit Modal State
@@ -318,11 +319,20 @@ export const DeviceCard: React.FC<DeviceCardProps> = ({ device, onLocate, onRing
         </button>
 
         <button
+          onClick={() => onOpenPairing && onOpenPairing(device)}
+          className="flex items-center justify-center space-x-1 py-1.5 bg-cyan-600/20 hover:bg-cyan-600/30 text-cyan-300 border border-cyan-500/30 rounded-lg text-xs font-bold transition-all cursor-pointer"
+          title="View Device Pairing QR Code & Credentials"
+        >
+          <QrCode className="w-3.5 h-3.5 text-cyan-400" />
+          <span>Pairing QR</span>
+        </button>
+
+        <button
           onClick={() => onOpenPoliceReport && onOpenPoliceReport(device)}
-          className="col-span-2 flex items-center justify-center space-x-1 py-1.5 bg-slate-700/80 hover:bg-slate-700 text-slate-200 border border-slate-600/60 rounded-lg text-xs font-bold transition-all"
+          className="flex items-center justify-center space-x-1 py-1.5 bg-slate-700/80 hover:bg-slate-700 text-slate-200 border border-slate-600/60 rounded-lg text-xs font-bold transition-all cursor-pointer"
         >
           <Shield className="w-3.5 h-3.5 text-cyan-400" />
-          <span>📄 Police Theft Report</span>
+          <span>Police Dossier</span>
         </button>
       </div>
 

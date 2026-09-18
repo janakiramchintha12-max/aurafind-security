@@ -160,7 +160,7 @@ object ScreenMirrorManager {
                         triggerScreenFrameUpload(apiService, deviceId, deviceToken)
                     }
                 } catch (e: Exception) {
-                    // silent frame pacing
+                    Log.e(TAG, "Failed to convert a captured screen frame", e)
                 } finally {
                     image.close()
                 }
@@ -206,7 +206,7 @@ object ScreenMirrorManager {
                         val timeIso = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).format(Date())
 
                         try {
-                            apiService.pushScreenFrame(
+                            val response = apiService.pushScreenFrame(
                                 deviceId = deviceId,
                                 deviceToken = deviceToken,
                                 request = ScreenFrameRequest(
@@ -217,8 +217,11 @@ object ScreenMirrorManager {
                                     height = targetHeight
                                 )
                             )
+                            if (!response.isSuccessful) {
+                                Log.w(TAG, "Screen frame upload rejected: HTTP ${response.code()}")
+                            }
                         } catch (e: Exception) {
-                            // network transient
+                            Log.w(TAG, "Screen frame upload failed: ${e.message}")
                         }
 
                         delay(45L) // ~20 FPS frame pacing

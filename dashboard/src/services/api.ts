@@ -18,7 +18,7 @@ const api = axios.create({
 });
 
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token');
+  const token = localStorage.getItem('token') || localStorage.getItem('access_token');
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
@@ -28,6 +28,10 @@ api.interceptors.request.use((config) => {
 export const authApi = {
   login: async (email: string, password: string) => {
     const res = await api.post('/auth/login', { email, password });
+    if (res.data?.access_token) {
+      localStorage.setItem('token', res.data.access_token);
+      localStorage.setItem('access_token', res.data.access_token);
+    }
     return res.data;
   },
   register: async (email: string, password: string, fullName?: string) => {
@@ -42,8 +46,22 @@ export const authApi = {
     const res = await api.get('/auth/me');
     return res.data;
   },
+  changePassword: async (currentPassword: string, newPassword: string) => {
+    const res = await api.post('/auth/change-password', {
+      current_password: currentPassword,
+      new_password: newPassword
+    });
+    return res.data;
+  },
   logout: async () => {
-    localStorage.removeItem('token');
+    try {
+      await api.post('/auth/logout');
+    } catch (e) {
+      // Ignore network errors on logout
+    } finally {
+      localStorage.removeItem('token');
+      localStorage.removeItem('access_token');
+    }
   }
 };
 

@@ -10,3 +10,9 @@ services:
         generateValue: true
       - key: ALGORITHM
         value: HS256
+      - key: ENVIRONMENT
+        value: production
+      - key: ENABLE_DEV_SEEDS
+        value: "false"
+      - key: ENABLE_API_DOCS
+        value: "false"
