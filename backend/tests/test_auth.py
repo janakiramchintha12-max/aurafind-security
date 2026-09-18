@@ -67,7 +67,22 @@ def test_security_headers_and_observability(client):
     assert res.headers.get("x-content-type-options") == "nosniff"
     assert res.headers.get("x-frame-options") == "DENY"
 
-def test_database_readiness_health(client):
+def test_database_readiness_health(client, monkeypatch):
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "ENVIRONMENT", "test")
     res = client.get("/health/ready")
     assert res.status_code == 200
-    assert res.json() == {"status": "ready", "database": "connected"}
+    assert res.json() == {
+        "status": "ready",
+        "database": "connected",
+        "database_backend": "sqlite"
+    }
+
+def test_production_readiness_rejects_sqlite(client, monkeypatch):
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "ENVIRONMENT", "production")
+    res = client.get("/health/ready")
+    assert res.status_code == 503
+    assert res.json()["detail"] == "Production requires a PostgreSQL DATABASE_URL"

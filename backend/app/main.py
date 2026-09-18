@@ -113,10 +113,23 @@ def liveness_check():
 def readiness_check():
     from app.database.session import SessionLocal
     from sqlalchemy import text
+
+    database_url = settings.DATABASE_URL.lower()
+    database_backend = "postgresql" if database_url.startswith(("postgresql://", "postgres://")) else "sqlite"
+    if settings.ENVIRONMENT == "production" and database_backend != "postgresql":
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Production requires a PostgreSQL DATABASE_URL"
+        )
+
     db = SessionLocal()
     try:
         db.execute(text("SELECT 1"))
-        return {"status": "ready", "database": "connected"}
+        return {
+            "status": "ready",
+            "database": "connected",
+            "database_backend": database_backend
+        }
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
