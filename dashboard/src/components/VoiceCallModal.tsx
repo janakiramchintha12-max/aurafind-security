@@ -99,7 +99,8 @@ export const VoiceCallModal: React.FC<VoiceCallModalProps> = ({ device, onClose 
   }, [device.id]);
 
   const playPcmChunk = (base64Audio: string) => {
-    if (!audioContextRef.current) return;
+    const audioContext = audioContextRef.current;
+    if (!audioContext || audioContext.state === 'closed') return;
     try {
       const binaryString = atob(base64Audio);
       const len = binaryString.length;
@@ -113,11 +114,11 @@ export const VoiceCallModal: React.FC<VoiceCallModalProps> = ({ device, onClose 
         float32Array[i] = int16Array[i] / 32768.0;
       }
 
-      const buffer = audioContextRef.current.createBuffer(1, float32Array.length, 16000);
+      const buffer = audioContext.createBuffer(1, float32Array.length, 16000);
       buffer.getChannelData(0).set(float32Array);
-      const source = audioContextRef.current.createBufferSource();
+      const source = audioContext.createBufferSource();
       source.buffer = buffer;
-      source.connect(audioContextRef.current.destination);
+      source.connect(audioContext.destination);
       source.start();
     } catch (e) {
       console.error('Error playing audio chunk', e);
