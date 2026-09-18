@@ -69,7 +69,7 @@ export const PoliceReportModal: React.FC<PoliceReportModalProps> = ({ device, sn
             <div className="grid grid-cols-2 gap-4 text-xs font-mono">
               <div className="bg-slate-100 p-3 rounded-xl space-y-1">
                 <div className="text-slate-500 text-[10px]">REGISTERED USER / OWNER</div>
-                <div className="font-bold text-slate-900">Janaki Ram (janakiram12)</div>
+                <div className="font-bold text-slate-900">Account holder</div>
                 <div className="text-slate-500 text-[10px] mt-2">DEVICE NAME & MODEL</div>
                 <div className="font-bold text-slate-900">{device.device_name} ({device.device_model})</div>
               </div>

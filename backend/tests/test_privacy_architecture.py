@@ -12,7 +12,16 @@ client = TestClient(app)
 @pytest.fixture
 def auth_headers():
     db = SessionLocal()
-    user = db.query(User).filter(User.email == "janakiram12").first()
+    user = db.query(User).filter(User.email == "privacy-test-user@example.com").first()
+    if not user:
+        user = User(
+            email="privacy-test-user@example.com",
+            hashed_password="test-only-placeholder",
+            full_name="Privacy Test User",
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
     db.close()
     token = create_access_token(user.id)
     return {"Authorization": f"Bearer {token}"}

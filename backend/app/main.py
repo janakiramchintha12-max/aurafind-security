@@ -12,39 +12,24 @@ from app.core.security import decode_token
 # Initialize Database tables
 Base.metadata.create_all(bind=engine)
 
-def seed_default_admin():
-    if not settings.ENABLE_DEV_SEEDS:
-        return
-
+def remove_legacy_seed_accounts():
     from app.database.session import SessionLocal
     from app.models.user import User
-    from app.models.device import Device
-    from app.core.security import get_password_hash
 
     db = SessionLocal()
     try:
-        # Development-only accounts. Never create these in production.
-        janaki_user = db.query(User).filter(User.email == "janakiram12").first()
-        if not janaki_user:
-            janaki_user = User(
-                id="janakiram12-user-uuid",
-                email="janakiram12",
-                hashed_password=get_password_hash("Janakiram12"),
-                full_name="Janaki Ram"
-            )
-            db.add(janaki_user)
+        legacy_users = db.query(User).filter(User.email.in_(("admin", "janakiram12"))).all()
+        for user in legacy_users:
+            db.delete(user)
+        if legacy_users:
             db.commit()
-            db.refresh(janaki_user)
-        else:
-            janaki_user.hashed_password = get_password_hash("Janakiram12")
-            db.commit()
-
     except Exception as e:
-        logging.getLogger("aurafind.auth").warning(f"Development seed skipped: {e}")
+        db.rollback()
+        logging.getLogger("aurafind.auth").error(f"Legacy account cleanup failed: {e}")
     finally:
         db.close()
 
-seed_default_admin()
+remove_legacy_seed_accounts()
 
 # Configure API Documentation visibility
 docs_url = "/docs" if settings.ENABLE_API_DOCS else None
