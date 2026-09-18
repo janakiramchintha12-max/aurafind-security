@@ -5,6 +5,7 @@ services:
     dockerfilePath: ./Dockerfile
     plan: free
     region: oregon
+    healthCheckPath: /health/ready
     envVars:
       - key: SECRET_KEY
         generateValue: true
