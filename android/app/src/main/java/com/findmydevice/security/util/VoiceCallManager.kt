@@ -3,6 +3,7 @@ package com.findmydevice.security.util
 import android.content.Context
 import android.media.*
 import android.util.Base64
+import android.util.Log
 import com.findmydevice.security.data.network.ApiService
 import kotlinx.coroutines.*
 import java.util.concurrent.atomic.AtomicBoolean
@@ -13,6 +14,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  */
 object VoiceCallManager {
 
+    private const val TAG = "VoiceCallManager"
     private var isCallActive = false
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
@@ -34,23 +36,27 @@ object VoiceCallManager {
         apiService: ApiService,
         deviceId: String,
         deviceToken: String
-    ) {
-        if (isCallActive) return
+    ): Boolean {
+        if (isCallActive) return true
         if (PrivacyManager.isMicPaused(context) && PrivacyManager.isSpeakerPaused(context)) {
-            return
+            Log.w(TAG, "Voice call blocked: microphone and speaker are paused")
+            return false
         }
-        isCallActive = true
 
         val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
         audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
         audioManager.isSpeakerphoneOn = true
 
+        var started = false
         if (!PrivacyManager.isMicPaused(context)) {
-            startMicrophoneCapture(apiService, deviceId, deviceToken)
+            started = startMicrophoneCapture(apiService, deviceId, deviceToken) || started
         }
         if (!PrivacyManager.isSpeakerPaused(context)) {
-            startSpeakerPlayback(apiService, deviceId, deviceToken)
+            started = startSpeakerPlayback(apiService, deviceId, deviceToken) || started
         }
+        isCallActive = started
+        Log.i(TAG, "Voice call ${if (started) "started" else "failed to start"}")
+        return started
     }
 
     fun stopCall() {
@@ -77,7 +83,7 @@ object VoiceCallManager {
         }
     }
 
-    private fun startMicrophoneCapture(apiService: ApiService, deviceId: String, deviceToken: String) {
+    private fun startMicrophoneCapture(apiService: ApiService, deviceId: String, deviceToken: String): Boolean {
         val minBufferSize = AudioRecord.getMinBufferSize(SAMPLE_RATE, CHANNEL_IN, AUDIO_FORMAT)
         val bufferSize = Math.max(minBufferSize, 2048)
 
@@ -91,7 +97,8 @@ object VoiceCallManager {
             )
 
             if (audioRecord?.state != AudioRecord.STATE_INITIALIZED) {
-                return
+                Log.e(TAG, "AudioRecord failed to initialize")
+                return false
             }
 
             audioRecord?.startRecording()
@@ -110,20 +117,23 @@ object VoiceCallManager {
                                 request = mapOf("audio_data" to base64Chunk, "direction" to "DEVICE_TO_DASHBOARD")
                             )
                         } catch (e: Exception) {
-                            // Non-blocking transmission
+                            Log.w(TAG, "Microphone upload failed: ${e.message}")
                         }
                     }
                     delay(40L) // ~25 packets per sec for ultra-low latency voice
                 }
             }
         } catch (e: SecurityException) {
-            e.printStackTrace()
+            Log.e(TAG, "Microphone permission denied", e)
+            return false
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.e(TAG, "Microphone capture failed", e)
+            return false
         }
+        return true
     }
 
-    private fun startSpeakerPlayback(apiService: ApiService, deviceId: String, deviceToken: String) {
+    private fun startSpeakerPlayback(apiService: ApiService, deviceId: String, deviceToken: String): Boolean {
         val minBufferSize = AudioTrack.getMinBufferSize(SAMPLE_RATE, CHANNEL_OUT, AUDIO_FORMAT)
         val bufferSize = Math.max(minBufferSize, 2048)
 
@@ -159,13 +169,15 @@ object VoiceCallManager {
                             }
                         }
                     } catch (e: Exception) {
-                        // transient retry
+                        Log.w(TAG, "Speaker polling failed: ${e.message}")
                     }
                     delay(50L)
                 }
             }
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.e(TAG, "Speaker playback failed", e)
+            return false
         }
+        return true
     }
 }

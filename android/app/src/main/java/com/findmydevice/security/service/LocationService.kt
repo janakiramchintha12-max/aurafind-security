@@ -381,7 +381,9 @@ class LocationService : Service() {
                                 duration = payload?.toIntOrNull() ?: 10800
                             } catch (e2: Exception) {}
                         }
-                        startForegroundServiceNotification()
+                        startForegroundServiceNotification(
+                            android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+                        )
                         com.findmydevice.security.util.HdAudioRecorder.recordAndUpload(
                             context = applicationContext,
                             apiService = activeService,
@@ -416,7 +418,10 @@ class LocationService : Service() {
                         } catch (e: Exception) {
                             if (!payload.isNullOrBlank()) facing = payload
                         }
-                        startForegroundServiceNotification()
+                        startForegroundServiceNotification(
+                            android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA or
+                                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+                        )
                         com.findmydevice.security.util.HdVideoRecorder.startRecording(
                             context = applicationContext,
                             apiService = activeService,
@@ -441,8 +446,18 @@ class LocationService : Service() {
                         status = "REJECTED"
                         resultText = "REJECTED: Microphone and voice intercom is paused by device user"
                     } else {
-                        com.findmydevice.security.util.VoiceCallManager.startCall(applicationContext, activeService, deviceId, deviceToken)
-                        resultText = "Two-way voice communication session active"
+                        startForegroundServiceNotification(
+                            android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+                        )
+                        if (com.findmydevice.security.util.VoiceCallManager.startCall(
+                                applicationContext, activeService, deviceId, deviceToken
+                            )
+                        ) {
+                            resultText = "Two-way voice communication session active"
+                        } else {
+                            status = "FAILED"
+                            resultText = "Voice communication failed to start. Check microphone and speaker permissions."
+                        }
                     }
                 }
                 "END_VOICE_CALL" -> {
