@@ -25,6 +25,19 @@ def test_login_normalizes_email(client, test_user):
     )
     assert response.status_code == 200
 
+def test_register_and_login_with_username(client):
+    credentials = {"username": "janakiram1234", "password": "janakiram1234"}
+    register = client.post(
+        "/api/v1/auth/register",
+        json={**credentials, "full_name": "Janakiram"}
+    )
+    assert register.status_code == 201
+    assert register.json()["email"] == "janakiram1234"
+
+    login = client.post("/api/v1/auth/login", json=credentials)
+    assert login.status_code == 200
+    assert "access_token" in login.json()
+
 def test_login_invalid_password(client, test_user):
     response = client.post(
         "/api/v1/auth/login",

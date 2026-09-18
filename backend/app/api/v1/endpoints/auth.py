@@ -13,14 +13,23 @@ router = APIRouter()
 def normalize_email(value: str) -> str:
     return value.strip().casefold()
 
+def get_identifier(email: str | None, username: str | None) -> str:
+    identifier = username if username is not None else email
+    if not identifier or not identifier.strip():
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Username is required"
+        )
+    return normalize_email(identifier)
+
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 def register(user_in: UserCreate, db: Session = Depends(get_db)):
-    email = normalize_email(user_in.email)
+    email = get_identifier(user_in.email, user_in.username)
     existing_user = db.query(User).filter(User.email == email).first()
     if existing_user:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Account with this email already exists."
+            detail="Account with this username already exists."
         )
     
     user = User(
@@ -37,11 +46,12 @@ def register(user_in: UserCreate, db: Session = Depends(get_db)):
 
 @router.post("/login", response_model=Token)
 def login(user_in: UserLogin, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.email == normalize_email(user_in.email)).first()
+    identifier = get_identifier(user_in.email, user_in.username)
+    user = db.query(User).filter(User.email == identifier).first()
     if not user or not verify_password(user_in.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect email or password"
+            detail="Incorrect username or password"
         )
     
     access_token = create_access_token(subject=user.id)

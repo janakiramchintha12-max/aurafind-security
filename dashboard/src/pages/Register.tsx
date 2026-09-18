@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { AlertCircle, Lock, Mail, Shield, UserRound } from 'lucide-react';
+import { AlertCircle, Lock, UserRound, Shield } from 'lucide-react';
 import { authApi } from '../services/api';
 
 interface RegisterProps {
@@ -8,7 +8,7 @@ interface RegisterProps {
 }
 
 export const Register: React.FC<RegisterProps> = ({ setUser }) => {
-  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [fullName, setFullName] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -25,8 +25,8 @@ export const Register: React.FC<RegisterProps> = ({ setUser }) => {
     }
     setLoading(true);
     try {
-      await authApi.register(email.trim(), password, fullName.trim() || undefined);
-      await authApi.login(email.trim(), password);
+      await authApi.register(username.trim(), password, fullName.trim() || undefined);
+      await authApi.login(username.trim(), password);
       setUser(await authApi.getMe());
       navigate('/');
     } catch (err: any) {
@@ -57,10 +57,10 @@ export const Register: React.FC<RegisterProps> = ({ setUser }) => {
         )}
         <form onSubmit={handleSubmit} className="space-y-4">
           <label className="block">
-            <span className="block text-xs font-semibold text-slate-300 mb-1">Email address</span>
+            <span className="block text-xs font-semibold text-slate-300 mb-1">Username</span>
             <span className="relative block">
-              <Mail className="absolute left-3 top-3 w-4 h-4 text-slate-500" />
-              <input required value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2.5 text-sm text-white" />
+              <UserRound className="absolute left-3 top-3 w-4 h-4 text-slate-500" />
+              <input required value={username} onChange={(e) => setUsername(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2.5 text-sm text-white" />
             </span>
           </label>
           <label className="block">

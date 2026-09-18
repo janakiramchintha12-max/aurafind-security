@@ -26,16 +26,16 @@ api.interceptors.request.use((config) => {
 });
 
 export const authApi = {
-  login: async (email: string, password: string) => {
-    const res = await api.post('/auth/login', { email, password });
+  login: async (username: string, password: string) => {
+    const res = await api.post('/auth/login', { username, password });
     if (res.data?.access_token) {
       localStorage.setItem('token', res.data.access_token);
       localStorage.setItem('access_token', res.data.access_token);
     }
     return res.data;
   },
-  register: async (email: string, password: string, fullName?: string) => {
-    const res = await api.post('/auth/register', { email, password, full_name: fullName });
+  register: async (username: string, password: string, fullName?: string) => {
+    const res = await api.post('/auth/register', { username, password, full_name: fullName });
     return res.data;
   },
   me: async () => {
