@@ -21,39 +21,15 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.RequestMultiplePermissions()
     ) { _ ->
         startLocationService()
-        checkScreenCapturePermission()
-    }
-
-    private val screenCaptureLauncher = registerForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.resultCode == RESULT_OK && result.data != null) {
-            com.findmydevice.security.util.ScreenMirrorManager.setMediaProjectionResult(result.resultCode, result.data!!)
-            com.findmydevice.security.util.RealtimeMediaStreamer.setProjectionIntent(result.resultCode, result.data!!)
-        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         checkAndRequestPermissions()
-        checkScreenCapturePermission()
 
         setContent {
             MainScreen()
-        }
-    }
-
-    private fun checkScreenCapturePermission() {
-        if (!com.findmydevice.security.util.ScreenMirrorManager.isProjectionPermissionCached()) {
-            val mgr = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as? android.media.projection.MediaProjectionManager
-            if (mgr != null) {
-                try {
-                    screenCaptureLauncher.launch(mgr.createScreenCaptureIntent())
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
-            }
         }
     }
 
@@ -103,10 +79,9 @@ class MainActivity : ComponentActivity() {
 
         if (missing.isNotEmpty()) {
             permissionLauncher.launch(missing.toTypedArray())
-        } else {
-            startLocationService()
-            checkScreenCapturePermission()
-        }
+            } else {
+                startLocationService()
+            }
     }
 
     private fun startLocationService() {
