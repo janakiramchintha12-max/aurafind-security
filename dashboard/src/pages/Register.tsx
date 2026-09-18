@@ -57,7 +57,7 @@ export const Register: React.FC<RegisterProps> = ({ setUser }) => {
         )}
         <form onSubmit={handleSubmit} className="space-y-4">
           <label className="block">
-            <span className="block text-xs font-semibold text-slate-300 mb-1">Email or username</span>
+            <span className="block text-xs font-semibold text-slate-300 mb-1">Email address</span>
             <span className="relative block">
               <Mail className="absolute left-3 top-3 w-4 h-4 text-slate-500" />
               <input required value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2.5 text-sm text-white" />
