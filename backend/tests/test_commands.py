@@ -42,3 +42,30 @@ def test_command_dispatch_and_execution(client, user_headers):
     )
     assert result_res.status_code == 200
     assert result_res.json()["status"] == "EXECUTED"
+
+def test_stream_commands_supersede_stale_stream_state(client, user_headers):
+    dev = client.post(
+        "/api/v1/devices/register",
+        json={"device_name": "Stream Target Device"},
+        headers=user_headers
+    ).json()
+    first = client.post(
+        f"/api/v1/devices/{dev['id']}/commands",
+        json={"command_type": "START_CAMERA_STREAM"},
+        headers=user_headers
+    )
+    second = client.post(
+        f"/api/v1/devices/{dev['id']}/commands",
+        json={"command_type": "START_CAMERA_STREAM"},
+        headers=user_headers
+    )
+    assert first.status_code == 201
+    assert second.status_code == 201
+    commands = client.get(
+        f"/api/v1/devices/{dev['id']}/commands",
+        headers=user_headers
+    ).json()
+    first_state = next(command for command in commands if command["id"] == first.json()["id"])
+    assert first_state["status"] == "FAILED"
+    assert "Superseded" in first_state["result"]
+    assert second.json()["status"] in ["PENDING", "SENT"]

@@ -49,6 +49,11 @@ ALLOWED_COMMAND_TYPES = {
     "REVIVE_DEVICE"
 }
 
+STREAM_COMMAND_GROUPS = {
+    "camera": {"START_CAMERA_STREAM", "STOP_CAMERA_STREAM", "START_LIVE_CAMERA", "STOP_LIVE_CAMERA"},
+    "screen": {"START_SCREEN_MIRROR", "STOP_SCREEN_MIRROR", "START_SCREEN_STREAM", "STOP_SCREEN_STREAM"},
+}
+
 @router.post("/{device_id}/commands", response_model=CommandResponse, status_code=status.HTTP_201_CREATED)
 async def dispatch_command(
     command_in: CommandCreate,
@@ -124,6 +129,29 @@ async def dispatch_command(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Remote device controls have been restricted by the physical device user."
         )
+
+    # A stream control command is stateful, not a queue. Supersede stale
+    # requests so reconnects cannot open the same camera or projection twice.
+    command_group = next(
+        (group for group, command_types in STREAM_COMMAND_GROUPS.items()
+         if command_in.command_type in command_types),
+        None,
+    )
+    if command_group:
+        stale_types = STREAM_COMMAND_GROUPS[command_group]
+        stale_commands = (
+            db.query(Command)
+            .filter(
+                Command.device_id == device.id,
+                Command.command_type.in_(stale_types),
+                Command.status.in_(["PENDING", "SENT"]),
+            )
+            .all()
+        )
+        for stale_command in stale_commands:
+            stale_command.status = "FAILED"
+            stale_command.result = "Superseded by a newer stream state command"
+            stale_command.executed_at = datetime.now(timezone.utc)
 
     # Automatically update lost mode flag if dispatching lost mode command
     if command_in.command_type == "ENABLE_LOST_MODE":

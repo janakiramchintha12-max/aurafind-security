@@ -54,7 +54,15 @@ object CameraStreamManager {
             stopStreaming()
             return
         }
-        currentFacing = facing.uppercase()
+        val requestedFacing = facing.uppercase()
+        if (isStreaming && cameraDevice != null && currentFacing == requestedFacing) {
+            Log.i(TAG, "Camera stream already active on $requestedFacing; ignoring duplicate start")
+            return
+        }
+        if (isStreaming) {
+            stopCameraCapture()
+        }
+        currentFacing = requestedFacing
         isStreaming = true
         isUploading.set(false)
         startBackgroundThread()
