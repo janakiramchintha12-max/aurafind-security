@@ -323,7 +323,7 @@ export const DeviceEnrollmentModal: React.FC<DeviceEnrollmentModalProps> = ({
                       <strong className="text-slate-200">Pair Handset:</strong> Tap "Scan QR Code" in the app or log in with your AuraFind account credentials.
                     </li>
                     <li>
-                      <strong className="text-slate-200">Grant Permissions:</strong> Accept Device Admin, Location, and Battery Optimization permissions for uninterrupted tracking.
+                      <strong className="text-slate-200">Grant permissions:</strong> Allow location, camera, microphone, and notifications for live telemetry and media. Screen sharing has a separate Android consent prompt.
                     </li>
                   </ol>
                 </div>

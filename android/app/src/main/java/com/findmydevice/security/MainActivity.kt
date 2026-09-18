@@ -37,8 +37,6 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         checkAndRequestPermissions()
-        checkOverlayPermission()
-        checkBatteryOptimizationPermission()
         checkScreenCapturePermission()
 
         setContent {
@@ -91,22 +89,9 @@ class MainActivity : ComponentActivity() {
         val permissionsToRequest = mutableListOf(
             Manifest.permission.ACCESS_FINE_LOCATION,
             Manifest.permission.ACCESS_COARSE_LOCATION,
-            Manifest.permission.READ_PHONE_STATE,
             Manifest.permission.CAMERA,
-            Manifest.permission.RECORD_AUDIO,
-            Manifest.permission.SEND_SMS,
-            Manifest.permission.RECEIVE_SMS
+            Manifest.permission.RECORD_AUDIO
         )
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            permissionsToRequest.add(Manifest.permission.READ_PHONE_NUMBERS)
-        }
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            permissionsToRequest.add(Manifest.permission.BLUETOOTH_ADVERTISE)
-            permissionsToRequest.add(Manifest.permission.BLUETOOTH_SCAN)
-            permissionsToRequest.add(Manifest.permission.BLUETOOTH_CONNECT)
-        }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             permissionsToRequest.add(Manifest.permission.POST_NOTIFICATIONS)
