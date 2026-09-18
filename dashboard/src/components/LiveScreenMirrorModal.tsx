@@ -1,22 +1,16 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   Tv, 
-  RefreshCw, 
   X, 
   Maximize2, 
   Minimize2, 
   RotateCw, 
   Download, 
   Mic, 
-  MicOff, 
-  Activity, 
-  Layers,
-  Sparkles,
-  Zap
+  MicOff
 } from 'lucide-react';
-import { commandsApi, screenApi, connectWebSocket } from '../services/api';
+import { commandsApi, screenApi } from '../services/api';
 import { Device } from '../types';
-import { HardwareStreamPlayer } from './HardwareStreamPlayer';
 
 interface LiveScreenMirrorModalProps {
   device: Device;
@@ -26,11 +20,8 @@ interface LiveScreenMirrorModalProps {
 export const LiveScreenMirrorModal: React.FC<LiveScreenMirrorModalProps> = ({ device, onClose }) => {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [rotationDegrees, setRotationDegrees] = useState<number>(0);
-  const [streamEngine, setStreamEngine] = useState<'HARDWARE_H264' | 'NATIVE_MJPEG' | 'SMOOTH_BUFFER'>('NATIVE_MJPEG');
-  const [hasReceivedFirstFrame, setHasReceivedFirstFrame] = useState<boolean>(false);
   const [streamError, setStreamError] = useState<string | null>(null);
   const [ambientAudioActive, setAmbientAudioActive] = useState<boolean>(false);
-  const [streamStats, setStreamStats] = useState({ fps: 60, latencyMs: 35, kbps: 1200, resolution: '720p' });
 
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -139,34 +130,16 @@ export const LiveScreenMirrorModal: React.FC<LiveScreenMirrorModalProps> = ({ de
 
         {/* Video Canvas / Stream Player */}
         <div className="flex-1 bg-black relative flex items-center justify-center overflow-hidden p-2">
-          {streamEngine === 'HARDWARE_H264' ? (
-            <HardwareStreamPlayer
-              deviceId={device.id}
-              streamSource="SCREEN"
-              enableAudio={ambientAudioActive}
-              rotationDegrees={rotationDegrees}
-              className="w-full h-full"
-              onStatsChange={setStreamStats}
-              onFirstFrameReceived={() => setHasReceivedFirstFrame(true)}
-            />
-          ) : (
-            <img
-              src={mjpegUrl}
-              alt="Child Screen Mirror"
-              className="max-h-full max-w-full object-contain rounded-xl transition-transform duration-200"
-              style={{
-                transform: `rotate(${rotationDegrees}deg)`
-              }}
-              onLoad={() => {
-                setStreamError(null);
-                setHasReceivedFirstFrame(true);
-              }}
-              onError={() => {
-                setHasReceivedFirstFrame(false);
-                setStreamError('No screen frames are reaching the dashboard. Approve screen capture on the phone and retry.');
-              }}
-            />
-          )}
+          <img
+            src={mjpegUrl}
+            alt="Child Screen Mirror"
+            className="max-h-full max-w-full object-contain rounded-xl transition-transform duration-200"
+            style={{
+              transform: `rotate(${rotationDegrees}deg)`
+            }}
+            onLoad={() => setStreamError(null)}
+            onError={() => setStreamError('No screen frames are reaching the dashboard. Approve screen capture on the phone and retry.')}
+          />
           {streamError && (
             <div className="absolute inset-x-4 bottom-4 rounded-xl border border-rose-500/40 bg-rose-950/90 px-4 py-3 text-sm text-rose-100">
               {streamError}
@@ -194,26 +167,7 @@ export const LiveScreenMirrorModal: React.FC<LiveScreenMirrorModalProps> = ({ de
             </button>
           </div>
 
-          {/* Engine Selector */}
-          <div className="flex items-center space-x-1 bg-slate-900/80 p-1 rounded-xl border border-slate-700/50 text-xs">
-            <button
-              onClick={() => setStreamEngine('HARDWARE_H264')}
-              className={`px-3 py-1 rounded-lg font-bold flex items-center gap-1.5 transition-colors cursor-pointer ${
-                streamEngine === 'HARDWARE_H264' ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow' : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <Zap className="w-3.5 h-3.5 text-amber-300" />
-              <span>Hardware H.264 (FlashKid Engine)</span>
-            </button>
-            <button
-              onClick={() => setStreamEngine('NATIVE_MJPEG')}
-              className={`px-2.5 py-1 rounded-lg font-bold transition-colors cursor-pointer ${
-                streamEngine === 'NATIVE_MJPEG' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              MJPEG Fallback
-            </button>
-          </div>
+          <span className="text-xs font-semibold text-slate-400">Live screen mirror</span>
         </div>
       </div>
     </div>
