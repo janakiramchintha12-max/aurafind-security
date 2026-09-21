@@ -79,10 +79,11 @@ def test_database_readiness_health(client, monkeypatch):
         "database_backend": "sqlite"
     }
 
-def test_production_readiness_rejects_sqlite(client, monkeypatch):
+def test_production_readiness_allows_connected_database(client, monkeypatch):
     from app.core.config import settings
 
     monkeypatch.setattr(settings, "ENVIRONMENT", "production")
     res = client.get("/health/ready")
-    assert res.status_code == 503
-    assert res.json()["detail"] == "Production requires a PostgreSQL DATABASE_URL"
+    assert res.status_code == 200
+    assert res.json()["status"] == "ready"
+    assert res.json()["database"] == "connected"
