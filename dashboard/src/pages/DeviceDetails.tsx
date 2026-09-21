@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Smartphone, Battery, Wifi, Radio, Key, Trash2, ArrowLeft, RefreshCw, MapPin, Bell, BellOff, Lock, Camera, AlertTriangle, ShieldAlert, Volume2, FileText, ShieldCheck, Gauge, Video, Edit3, Save, X, Phone, QrCode, BarChart3, MessageSquare, Clock } from 'lucide-react';
-import { devicesApi, commandsApi, snapshotsApi, locationsApi, parentalApi } from '../services/api';
-import { Device, Command, Snapshot, LocationRecord } from '../types';
+import { Smartphone, Battery, Wifi, Radio, Key, Trash2, ArrowLeft, RefreshCw, MapPin, Bell, BellOff, Lock, Camera, AlertTriangle, ShieldAlert, Volume2, FileText, ShieldCheck, Gauge, Video, Edit3, Save, X, Phone, QrCode, BarChart3, MessageSquare, Clock, Film, Download, Play, Disc, Square } from 'lucide-react';
+import { devicesApi, commandsApi, snapshotsApi, locationsApi, parentalApi, videoApi, audioApi } from '../services/api';
+import { Device, Command, Snapshot, LocationRecord, VideoRecording, AudioRecording } from '../types';
 import { PoliceReportModal } from '../components/PoliceReportModal';
 import { LiveCameraStreamModal } from '../components/LiveCameraStreamModal';
 import { DeviceEnrollmentModal } from '../components/DeviceEnrollmentModal';
@@ -35,6 +35,24 @@ export const DeviceDetailsPage: React.FC = () => {
 
   // Live Camera Stream Modal State
   const [cameraModalOpen, setCameraModalOpen] = useState(false);
+
+  // ── Video & Audio Recordings State ──────────────────────────────────────────
+  const [videoRecordings, setVideoRecordings] = useState<VideoRecording[]>([]);
+  const [audioRecordings, setAudioRecordings] = useState<AudioRecording[]>([]);
+  const [loadingRecordings, setLoadingRecordings] = useState(false);
+  const [activeVideo, setActiveVideo] = useState<VideoRecording | null>(null);
+  const [activeVideoBlobUrl, setActiveVideoBlobUrl] = useState('');
+  const [activeAudio, setActiveAudio] = useState<AudioRecording | null>(null);
+  const [activeAudioBlobUrl, setActiveAudioBlobUrl] = useState('');
+  const [mediaTab, setMediaTab] = useState<'VIDEO' | 'AUDIO'>('VIDEO');
+
+  // Recording controls state
+  const [recordDuration, setRecordDuration] = useState(300); // 5 min default
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const [recordingCountdown, setRecordingCountdown] = useState<number | null>(null);
+  const [recordTimerRef, setRecordTimerRef] = useState<any>(null);
+  const [recordFacing, setRecordFacing] = useState<'FRONT' | 'BACK'>('BACK');
 
   const fetchDetails = async () => {
     if (!id) return;
@@ -72,6 +90,155 @@ export const DeviceDetailsPage: React.FC = () => {
   useEffect(() => {
     fetchDetails();
   }, [id]);
+
+  // ── Recordings helpers ──────────────────────────────────────────────────────
+  const getBlobUrl = (data: string, mimeType: string): string => {
+    try {
+      let base64 = data;
+      let mime = mimeType;
+      if (data.startsWith('data:')) {
+        const parts = data.split('base64,');
+        if (parts.length === 2) { mime = parts[0].replace('data:', '').replace(';', '') || mime; base64 = parts[1]; }
+      }
+      const binary = atob(base64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      return URL.createObjectURL(new Blob([bytes], { type: mime }));
+    } catch (e) { return data; }
+  };
+
+  const fetchRecordings = async () => {
+    if (!id) return;
+    setLoadingRecordings(true);
+    try {
+      const [vids, auds] = await Promise.all([
+        videoApi.listRecordings(id).catch(() => [] as VideoRecording[]),
+        audioApi.listRecordings(id).catch(() => [] as AudioRecording[]),
+      ]);
+      setVideoRecordings(vids);
+      setAudioRecordings(auds);
+      if (vids.length > 0 && !activeVideo) setActiveVideo(vids[0]);
+      if (auds.length > 0 && !activeAudio) setActiveAudio(auds[0]);
+    } catch (e) {
+      console.error('Failed to load recordings', e);
+    } finally {
+      setLoadingRecordings(false);
+    }
+  };
+
+  useEffect(() => { fetchRecordings(); }, [id]);
+
+  useEffect(() => {
+    if (activeVideo) {
+      const url = getBlobUrl(activeVideo.video_data, activeVideo.mime_type);
+      setActiveVideoBlobUrl(url);
+      return () => { if (url.startsWith('blob:')) URL.revokeObjectURL(url); };
+    } else { setActiveVideoBlobUrl(''); }
+  }, [activeVideo]);
+
+  useEffect(() => {
+    if (activeAudio) {
+      const url = getBlobUrl(activeAudio.audio_data, activeAudio.mime_type);
+      setActiveAudioBlobUrl(url);
+      return () => { if (url.startsWith('blob:')) URL.revokeObjectURL(url); };
+    } else { setActiveAudioBlobUrl(''); }
+  }, [activeAudio]);
+
+  const formatDuration = (s: number): string => {
+    if (s < 60) return `${s}s`;
+    const m = Math.floor(s / 60), rem = s % 60;
+    if (m < 60) return rem > 0 ? `${m}m ${rem}s` : `${m}m`;
+    const h = Math.floor(m / 60), remM = m % 60;
+    return remM > 0 ? `${h}h ${remM}m` : `${h}h`;
+  };
+
+  const formatTimer = (secs: number): string => {
+    const h = Math.floor(secs / 3600), m = Math.floor((secs % 3600) / 60), s = secs % 60;
+    if (h > 0) return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  };
+
+  const handleStartRecording = async () => {
+    if (!id) return;
+    try {
+      setIsRecording(true);
+      setRecordingSeconds(0);
+      setRecordingCountdown(recordDuration);
+      await commandsApi.dispatch(id, 'START_VIDEO_RECORDING', { facing: recordFacing, duration_seconds: recordDuration, max_duration: recordDuration });
+      const timer = setInterval(() => {
+        setRecordingSeconds(s => s + 1);
+        setRecordingCountdown(c => {
+          if (c !== null && c > 1) return c - 1;
+          clearInterval(timer);
+          setIsRecording(false);
+          setRecordingCountdown(null);
+          setTimeout(() => fetchRecordings(), 4000);
+          return 0;
+        });
+      }, 1000);
+      setRecordTimerRef(timer);
+    } catch (e: any) {
+      alert(`Failed to start recording: ${e?.response?.data?.detail || e.message}`);
+      setIsRecording(false);
+    }
+  };
+
+  const handleStopRecording = async () => {
+    if (!id) return;
+    try {
+      await commandsApi.dispatch(id, 'STOP_VIDEO_RECORDING');
+      if (recordTimerRef) clearInterval(recordTimerRef);
+      setIsRecording(false);
+      setRecordingSeconds(0);
+      setRecordingCountdown(null);
+      setTimeout(() => fetchRecordings(), 4000);
+    } catch (e: any) {
+      alert(`Failed to stop recording: ${e?.response?.data?.detail || e.message}`);
+    }
+  };
+
+  const handleDownloadVideo = (rec: VideoRecording) => {
+    const url = getBlobUrl(rec.video_data, rec.mime_type);
+    const a = document.createElement('a');
+    a.href = url;
+    const d = new Date(rec.created_at).toISOString().slice(0, 10);
+    a.download = `AuraFind_${device?.device_name.replace(/[^a-zA-Z0-9]/g, '_')}_${rec.facing}_${Math.round(rec.duration_seconds)}s_${d}.mp4`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  };
+
+  const handleDownloadAudio = (rec: AudioRecording) => {
+    const url = getBlobUrl(rec.audio_data, rec.mime_type);
+    const a = document.createElement('a');
+    a.href = url;
+    const d = new Date(rec.created_at).toISOString().slice(0, 10);
+    const ext = rec.mime_type?.includes('mp4') ? 'mp4' : rec.mime_type?.includes('wav') ? 'wav' : 'mp3';
+    a.download = `AuraFind_Audio_${Math.round(rec.duration_seconds)}s_${d}.${ext}`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  };
+
+  const handleDeleteVideo = async (recId: string) => {
+    if (!id || !confirm('Delete this video recording?')) return;
+    try {
+      await videoApi.deleteRecording(id, recId);
+      setVideoRecordings(prev => prev.filter(r => r.id !== recId));
+      if (activeVideo?.id === recId) {
+        const rem = videoRecordings.filter(r => r.id !== recId);
+        setActiveVideo(rem.length > 0 ? rem[0] : null);
+      }
+    } catch (e) { alert('Failed to delete video'); }
+  };
+
+  const handleDeleteAudio = async (recId: string) => {
+    if (!id || !confirm('Delete this audio recording?')) return;
+    try {
+      await audioApi.deleteRecording(id, recId);
+      setAudioRecordings(prev => prev.filter(r => r.id !== recId));
+      if (activeAudio?.id === recId) {
+        const rem = audioRecordings.filter(r => r.id !== recId);
+        setActiveAudio(rem.length > 0 ? rem[0] : null);
+      }
+    } catch (e) { alert('Failed to delete audio'); }
+  };
 
   const handleSendCommand = async (type: string, payload?: object) => {
     if (!id) return;
@@ -362,66 +529,307 @@ export const DeviceDetailsPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Remote Command Center */}
-        <div className="space-y-4">
+
+        {/* ── Quick Commands ──────────────────────────────────────── */}
+        <div className="space-y-3">
           <h3 className="text-sm font-bold text-white flex items-center space-x-2">
             <Camera className="w-4 h-4 text-cyan-400" />
-            <span>Remote Tactical Command Center</span>
+            <span>Remote Commands</span>
           </h3>
-
-          <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
+          <div className="flex flex-wrap gap-2">
             <button
               onClick={() => setCameraModalOpen(true)}
-              className="p-3 bg-rose-600/30 hover:bg-rose-600/40 text-rose-200 border border-rose-500/40 rounded-xl text-xs font-bold flex items-center justify-center space-x-2 transition-all"
+              className="px-3 py-2 bg-rose-600/30 hover:bg-rose-600/50 text-rose-200 border border-rose-500/40 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all"
             >
-              <Video className="w-4 h-4 text-rose-400 animate-pulse" />
-              <span>Live Stream</span>
+              <Video className="w-3.5 h-3.5 text-rose-400 animate-pulse" />
+              Live Camera
             </button>
-
-            <button
-              onClick={() => handleSendCommand('LOCATE_NOW')}
-              className="p-3 bg-cyan-600/20 hover:bg-cyan-600/30 text-cyan-300 border border-cyan-500/30 rounded-xl text-xs font-bold flex items-center justify-center space-x-2 transition-all"
-            >
-              <MapPin className="w-4 h-4" />
-              <span>Locate Fix</span>
+            <button onClick={() => handleSendCommand('LOCATE_NOW')} className="px-3 py-2 bg-cyan-600/20 hover:bg-cyan-600/30 text-cyan-300 border border-cyan-500/30 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all">
+              <MapPin className="w-3.5 h-3.5" /> Locate Now
             </button>
-
-            <button
-              onClick={() => handleSendCommand('CAPTURE_SNAPSHOT')}
-              className="p-3 bg-cyan-600/30 hover:bg-cyan-600/40 text-cyan-200 border border-cyan-500/40 rounded-xl text-xs font-bold flex items-center justify-center space-x-2 transition-all"
-            >
-              <Camera className="w-4 h-4 text-cyan-400" />
-              <span>Take Selfie</span>
+            <button onClick={() => handleSendCommand('CAPTURE_SNAPSHOT')} className="px-3 py-2 bg-slate-700/60 hover:bg-slate-700 text-slate-200 border border-slate-600 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all">
+              <Camera className="w-3.5 h-3.5 text-cyan-400" /> Take Selfie
             </button>
-
-            <button
-              onClick={() => setVoiceModalOpen(true)}
-              className="p-3 bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/30 rounded-xl text-xs font-bold flex items-center justify-center space-x-2 transition-all"
-            >
-              <Volume2 className="w-4 h-4 text-purple-400" />
-              <span>Voice Warning</span>
+            <button onClick={() => setVoiceModalOpen(true)} className="px-3 py-2 bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/30 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all">
+              <Volume2 className="w-3.5 h-3.5" /> Voice Warning
             </button>
-
-            <button
-              onClick={() => handleSendCommand('PLAY_ALARM')}
-              className="p-3 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 rounded-xl text-xs font-bold flex items-center justify-center space-x-2 transition-all"
-            >
-              <Bell className="w-4 h-4 text-amber-400 animate-bounce" />
-              <span>Start Ringing</span>
+            <button onClick={() => handleSendCommand('PLAY_ALARM')} className="px-3 py-2 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all">
+              <Bell className="w-3.5 h-3.5 animate-bounce" /> Alarm
             </button>
-
             <button
               onClick={handleToggleLostMode}
-              className={`p-3 border rounded-xl text-xs font-bold flex items-center justify-center space-x-2 transition-all ${
-                device.is_lost_mode
-                  ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
-                  : 'bg-rose-500/20 border-rose-500/40 text-rose-300'
+              className={`px-3 py-2 border rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all ${
+                device.is_lost_mode ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300' : 'bg-rose-500/20 border-rose-500/40 text-rose-300'
               }`}
             >
-              <Lock className="w-4 h-4" />
-              <span>{device.is_lost_mode ? 'Unlock Lost Mode' : 'Enable Lost Mode'}</span>
+              <Lock className="w-3.5 h-3.5" />
+              {device.is_lost_mode ? 'Disable Lost Mode' : 'Enable Lost Mode'}
             </button>
           </div>
+        </div>
+
+        {/* ═══════════════════════════════════════════════════════════════
+            VIDEO & AUDIO RECORDINGS LIBRARY
+            ═══════════════════════════════════════════════════════════════ */}
+        <div className="space-y-4 pt-2 border-t border-slate-700/60">
+          {/* Header */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <h3 className="text-sm font-bold text-white flex items-center space-x-2">
+              <Film className="w-4 h-4 text-cyan-400" />
+              <span>Video &amp; Audio Recordings Library</span>
+              <span className="text-[11px] bg-cyan-500/20 text-cyan-300 font-bold px-2 py-0.5 rounded-full border border-cyan-500/30">
+                {videoRecordings.length} videos · {audioRecordings.length} audio
+              </span>
+            </h3>
+            <button
+              onClick={fetchRecordings}
+              className="text-xs text-slate-400 hover:text-white flex items-center gap-1.5 bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-700"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${loadingRecordings ? 'animate-spin' : ''}`} />
+              Refresh
+            </button>
+          </div>
+
+          {/* ── New Recording Controls ── */}
+          <div className="bg-slate-900/80 border border-slate-700/60 rounded-2xl p-4 space-y-3">
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-2 text-xs font-bold text-slate-300">
+                <Disc className="w-4 h-4 text-rose-400" />
+                <span>Record Video + Audio</span>
+              </div>
+              {/* Lens selector */}
+              <div className="flex bg-slate-800 p-1 rounded-xl border border-slate-700 text-xs">
+                <button onClick={() => setRecordFacing('FRONT')} className={`px-2.5 py-1 rounded-lg font-bold transition-all ${recordFacing === 'FRONT' ? 'bg-purple-600 text-white' : 'text-slate-400 hover:text-white'}`}>
+                  👤 Front
+                </button>
+                <button onClick={() => setRecordFacing('BACK')} className={`px-2.5 py-1 rounded-lg font-bold transition-all ${recordFacing === 'BACK' ? 'bg-cyan-500 text-slate-950' : 'text-slate-400 hover:text-white'}`}>
+                  🏙️ Rear
+                </button>
+              </div>
+              {/* Duration presets */}
+              <div className="flex flex-wrap gap-1.5">
+                {[{l:'30s',v:30},{l:'5m',v:300},{l:'15m',v:900},{l:'30m',v:1800},{l:'1h',v:3600},{l:'3h',v:10800}].map(p => (
+                  <button
+                    key={p.v}
+                    onClick={() => setRecordDuration(p.v)}
+                    disabled={isRecording}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition-all cursor-pointer ${
+                      recordDuration === p.v ? 'bg-cyan-500 text-slate-950 border-cyan-400' : 'bg-slate-800 text-slate-300 border-slate-700 hover:border-cyan-500/50'
+                    } disabled:opacity-40`}
+                  >{p.l}</button>
+                ))}
+              </div>
+            </div>
+
+            {!isRecording ? (
+              <button
+                onClick={handleStartRecording}
+                className="w-full sm:w-auto px-6 py-2.5 bg-gradient-to-r from-rose-600 to-pink-600 hover:from-rose-500 hover:to-pink-500 text-white font-black text-xs rounded-xl flex items-center gap-2 shadow-lg shadow-rose-600/20 transition-all"
+              >
+                <Disc className="w-4 h-4 animate-spin" />
+                Start {formatDuration(recordDuration)} Recording on {recordFacing === 'BACK' ? '🏙️ Rear' : '👤 Front'} Camera
+              </button>
+            ) : (
+              <div className="space-y-2 bg-slate-950/80 border border-rose-500/40 rounded-xl p-3">
+                <div className="flex items-center justify-between text-xs font-mono">
+                  <div className="flex items-center gap-2 text-rose-400 font-black animate-pulse">
+                    <span className="w-2 h-2 rounded-full bg-rose-500"></span>
+                    REC · {formatTimer(recordingSeconds)} elapsed
+                  </div>
+                  <span className="text-slate-400">
+                    {recordingCountdown !== null ? `${formatTimer(recordingCountdown)} remaining` : ''}
+                  </span>
+                </div>
+                <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                  <div
+                    className="bg-gradient-to-r from-rose-500 to-pink-400 h-1.5 rounded-full transition-all duration-1000"
+                    style={{ width: `${Math.min(100, (recordingSeconds / recordDuration) * 100)}%` }}
+                  />
+                </div>
+                <button
+                  onClick={handleStopRecording}
+                  className="px-4 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs rounded-xl flex items-center gap-1.5 shadow-lg"
+                >
+                  <Square className="w-3.5 h-3.5 fill-current" /> Stop & Save Now
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* ── Video / Audio Tab Switcher ── */}
+          <div className="flex bg-slate-800 p-1 rounded-xl border border-slate-700 text-xs font-bold w-fit">
+            <button
+              onClick={() => setMediaTab('VIDEO')}
+              className={`px-4 py-1.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+                mediaTab === 'VIDEO' ? 'bg-gradient-to-r from-rose-500 to-pink-600 text-white shadow' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Film className="w-3.5 h-3.5" /> Videos ({videoRecordings.length})
+            </button>
+            <button
+              onClick={() => setMediaTab('AUDIO')}
+              className={`px-4 py-1.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+                mediaTab === 'AUDIO' ? 'bg-gradient-to-r from-purple-500 to-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Volume2 className="w-3.5 h-3.5" /> Audio ({audioRecordings.length})
+            </button>
+          </div>
+
+          {/* ── VIDEO RECORDINGS ── */}
+          {mediaTab === 'VIDEO' && (
+            <>
+              {videoRecordings.length === 0 ? (
+                <div className="py-10 text-center text-slate-500 border border-dashed border-slate-700 rounded-2xl">
+                  <Film className="w-10 h-10 text-slate-700 mx-auto mb-2" />
+                  <div className="text-sm font-bold text-slate-400">No video recordings yet</div>
+                  <p className="text-xs text-slate-500 mt-1">Start a recording above — it will appear here when done.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                  {/* Player */}
+                  <div className="lg:col-span-2 bg-slate-950 border border-slate-800 rounded-2xl overflow-hidden">
+                    {activeVideo && activeVideoBlobUrl ? (
+                      <>
+                        <div className="aspect-video bg-black">
+                          <video key={activeVideo.id} src={activeVideoBlobUrl} controls autoPlay className="w-full h-full object-contain" />
+                        </div>
+                        <div className="flex flex-wrap items-center justify-between gap-2 p-3 text-xs font-mono bg-slate-900 border-t border-slate-800">
+                          <div className="flex items-center gap-2 text-slate-300">
+                            <span className="bg-cyan-500/20 text-cyan-300 px-2 py-0.5 rounded font-bold">
+                              {activeVideo.facing === 'FRONT' ? '👤 Front' : '🏙️ Rear'}
+                            </span>
+                            <span className="text-emerald-400 flex items-center gap-1"><Volume2 className="w-3 h-3" /> Audio</span>
+                            <span>⏱ {activeVideo.duration_seconds.toFixed(0)}s</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => handleDownloadVideo(activeVideo)}
+                              className="flex items-center gap-1 px-3 py-1.5 bg-emerald-600/30 hover:bg-emerald-600/50 text-emerald-300 border border-emerald-500/40 rounded-lg font-bold cursor-pointer"
+                            >
+                              <Download className="w-3.5 h-3.5" /> Download MP4
+                            </button>
+                            <button onClick={() => handleDeleteVideo(activeVideo.id)} className="p-1.5 bg-rose-600/20 hover:bg-rose-600/40 text-rose-300 border border-rose-500/30 rounded-lg cursor-pointer">
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="py-16 text-center text-slate-500 text-xs">Select a video →</div>
+                    )}
+                  </div>
+
+                  {/* Video list */}
+                  <div className="bg-slate-900/80 border border-slate-800 rounded-2xl flex flex-col max-h-[400px] overflow-hidden">
+                    <div className="text-xs font-bold text-slate-400 uppercase tracking-wider border-b border-slate-800 p-3">
+                      {videoRecordings.length} Video{videoRecordings.length !== 1 ? 's' : ''}
+                    </div>
+                    <div className="flex-1 overflow-y-auto p-2 space-y-2">
+                      {videoRecordings.map((rec, idx) => {
+                        const sel = activeVideo?.id === rec.id;
+                        return (
+                          <div
+                            key={rec.id}
+                            onClick={() => setActiveVideo(rec)}
+                            className={`p-2.5 rounded-xl border transition-all cursor-pointer ${sel ? 'bg-cyan-950/80 border-cyan-400 ring-1 ring-cyan-500/20' : 'bg-slate-950/70 border-slate-800 hover:border-cyan-500/40'}`}
+                          >
+                            <div className="flex items-center gap-2">
+                              <div className="w-14 h-10 bg-slate-900 rounded-lg overflow-hidden flex items-center justify-center border border-slate-800 shrink-0 relative">
+                                {rec.thumbnail_data ? <img src={rec.thumbnail_data} alt="" className="w-full h-full object-cover" /> : <Film className="w-4 h-4 text-slate-600" />}
+                                <div className="absolute inset-0 bg-black/30 flex items-center justify-center"><Play className="w-3 h-3 fill-white text-white" /></div>
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center justify-between text-xs font-bold">
+                                  <span className={sel ? 'text-cyan-300' : 'text-white'}>Video #{videoRecordings.length - idx}</span>
+                                  <span className="text-[10px] text-slate-400">{rec.duration_seconds.toFixed(0)}s</span>
+                                </div>
+                                <div className="text-[10px] text-slate-400 truncate mt-0.5">{new Date(rec.created_at).toLocaleString()}</div>
+                                <div className="text-[10px] text-cyan-400 mt-0.5">{rec.facing === 'FRONT' ? '👤 Front' : '🏙️ Rear'} · Audio</div>
+                              </div>
+                              <button onClick={(e) => { e.stopPropagation(); handleDownloadVideo(rec); }} className="p-1 bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-400 rounded-lg cursor-pointer shrink-0" title="Download">
+                                <Download className="w-3 h-3" />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+
+          {/* ── AUDIO RECORDINGS ── */}
+          {mediaTab === 'AUDIO' && (
+            <>
+              {audioRecordings.length === 0 ? (
+                <div className="py-10 text-center text-slate-500 border border-dashed border-slate-700 rounded-2xl">
+                  <Volume2 className="w-10 h-10 text-slate-700 mx-auto mb-2" />
+                  <div className="text-sm font-bold text-slate-400">No audio recordings yet</div>
+                  <p className="text-xs text-slate-500 mt-1">Audio recordings captured from the device microphone will appear here.</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {/* Audio player */}
+                  {activeAudio && activeAudioBlobUrl && (
+                    <div className="bg-slate-950 border border-slate-800 rounded-2xl p-4 space-y-3">
+                      <div className="flex items-center justify-between text-xs font-mono text-slate-300">
+                        <div className="flex items-center gap-2">
+                          <Volume2 className="w-4 h-4 text-purple-400" />
+                          <span className="font-bold text-white">Playing Audio #{audioRecordings.findIndex(r => r.id === activeAudio.id) + 1}</span>
+                          <span className="text-slate-400">⏱ {activeAudio.duration_seconds.toFixed(0)}s</span>
+                          <span className="text-slate-500">{new Date(activeAudio.created_at).toLocaleString()}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button onClick={() => handleDownloadAudio(activeAudio)} className="flex items-center gap-1 px-3 py-1.5 bg-purple-600/30 hover:bg-purple-600/50 text-purple-300 border border-purple-500/40 rounded-lg font-bold cursor-pointer">
+                            <Download className="w-3.5 h-3.5" /> Download
+                          </button>
+                          <button onClick={() => handleDeleteAudio(activeAudio.id)} className="p-1.5 bg-rose-600/20 hover:bg-rose-600/40 text-rose-300 border border-rose-500/30 rounded-lg cursor-pointer">
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                      <audio key={activeAudio.id} src={activeAudioBlobUrl} controls autoPlay className="w-full" />
+                    </div>
+                  )}
+
+                  {/* Audio list */}
+                  <div className="space-y-2">
+                    {audioRecordings.map((rec, idx) => {
+                      const sel = activeAudio?.id === rec.id;
+                      return (
+                        <div
+                          key={rec.id}
+                          onClick={() => setActiveAudio(rec)}
+                          className={`p-3 rounded-xl border transition-all cursor-pointer flex items-center justify-between gap-3 ${sel ? 'bg-purple-950/60 border-purple-400 ring-1 ring-purple-500/20' : 'bg-slate-900/70 border-slate-800 hover:border-purple-500/40'}`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className={`p-2 rounded-xl border ${sel ? 'bg-purple-500/20 border-purple-500/40' : 'bg-slate-800 border-slate-700'}`}>
+                              <Volume2 className={`w-4 h-4 ${sel ? 'text-purple-400' : 'text-slate-400'}`} />
+                            </div>
+                            <div>
+                              <div className="text-xs font-bold text-white">Audio #{audioRecordings.length - idx}</div>
+                              <div className="text-[10px] text-slate-400 font-mono">{new Date(rec.created_at).toLocaleString()} · {rec.duration_seconds.toFixed(0)}s</div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button onClick={(e) => { e.stopPropagation(); handleDownloadAudio(rec); }} className="p-1.5 bg-purple-600/20 hover:bg-purple-600/40 text-purple-300 border border-purple-500/30 rounded-lg cursor-pointer" title="Download">
+                              <Download className="w-3.5 h-3.5" />
+                            </button>
+                            <button onClick={(e) => { e.stopPropagation(); handleDeleteAudio(rec.id); }} className="p-1.5 bg-rose-600/20 hover:bg-rose-600/40 text-rose-300 border border-rose-500/30 rounded-lg cursor-pointer" title="Delete">
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
         </div>
 
         {/* Intruder Selfies & Camera Snapshots Gallery */}
