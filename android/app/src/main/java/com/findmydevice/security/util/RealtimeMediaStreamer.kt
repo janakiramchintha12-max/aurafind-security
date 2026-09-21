@@ -322,18 +322,8 @@ object RealtimeMediaStreamer {
             val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
             val targetFacing = if (currentCameraFacing == "BACK") CameraCharacteristics.LENS_FACING_BACK else CameraCharacteristics.LENS_FACING_FRONT
 
-            var targetCameraId: String? = null
-            for (id in cameraManager.cameraIdList) {
-                val characteristics = cameraManager.getCameraCharacteristics(id)
-                if (characteristics.get(CameraCharacteristics.LENS_FACING) == targetFacing) {
-                    targetCameraId = id
-                    break
-                }
-            }
-            if (targetCameraId == null && cameraManager.cameraIdList.isNotEmpty()) {
-                targetCameraId = cameraManager.cameraIdList[0]
-            }
-            if (targetCameraId == null) return
+            val pair = CameraStreamManager.findCameraIdForFacing(cameraManager, targetFacing)
+            val targetCameraId = pair?.first ?: return
 
             val sourceId = if (currentCameraFacing == "BACK") SRC_CAM_BACK else SRC_CAM_FRONT
 

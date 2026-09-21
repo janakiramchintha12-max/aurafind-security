@@ -73,38 +73,30 @@ object HdVideoRecorder {
         scope.launch {
             try {
                 startBackgroundThread()
+                // Breather to let previous camera session release in HAL
+                delay(350L)
 
                 val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
                 val targetFacing = if (recordingFacing == "BACK") CameraCharacteristics.LENS_FACING_BACK else CameraCharacteristics.LENS_FACING_FRONT
 
-                var targetCameraId: String? = null
-                var cameraCharacteristics: CameraCharacteristics? = null
-
-                for (id in cameraManager.cameraIdList) {
-                    val characteristics = cameraManager.getCameraCharacteristics(id)
-                    val lensFacing = characteristics.get(CameraCharacteristics.LENS_FACING)
-                    if (lensFacing == targetFacing) {
-                        targetCameraId = id
-                        cameraCharacteristics = characteristics
-                        break
-                    }
-                }
-
-                if (targetCameraId == null && cameraManager.cameraIdList.isNotEmpty()) {
-                    targetCameraId = cameraManager.cameraIdList[0]
-                    cameraCharacteristics = cameraManager.getCameraCharacteristics(targetCameraId)
-                }
-
-                if (targetCameraId == null) {
-                    Log.e(TAG, "No suitable camera ID found for video recording")
+                val pair = CameraStreamManager.findCameraIdForFacing(cameraManager, targetFacing)
+                if (pair == null) {
+                    Log.e(TAG, "No suitable camera ID found for video recording ($recordingFacing)")
                     isRecording = false
                     return@launch
                 }
+                val targetCameraId = pair.first
+                val cameraCharacteristics = pair.second
 
-                // Determine video resolution (prefer 1280x720 or 640x480)
-                val map = cameraCharacteristics?.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
+                // Determine video resolution (for up to 3 hours, optimize to 640x480 or 800kbps)
+                val map = cameraCharacteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
                 val sizes = map?.getOutputSizes(MediaRecorder::class.java) ?: emptyArray()
-                val chosenSize = findBestVideoSize(sizes)
+                val isLongRecording = maxDurationSeconds > 1800
+                val chosenSize = if (isLongRecording) {
+                    sizes.firstOrNull { it.width == 640 && it.height == 480 } ?: findBestVideoSize(sizes)
+                } else {
+                    findBestVideoSize(sizes)
+                }
 
                 // Prepare output file
                 val tempFile = File(context.cacheDir, "hd_video_${System.currentTimeMillis()}.mp4")
@@ -118,21 +110,25 @@ object HdVideoRecorder {
                 }
                 mediaRecorder = recorder
 
-                // Audio configuration: Hardware mic at 44.1 kHz AAC 128 kbps
+                // Audio configuration: Hardware mic at 44.1 kHz AAC
                 recorder.setAudioSource(MediaRecorder.AudioSource.MIC)
                 recorder.setVideoSource(MediaRecorder.VideoSource.SURFACE)
                 recorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
                 recorder.setOutputFile(tempFile.absolutePath)
                 recorder.setVideoEncoder(MediaRecorder.VideoEncoder.H264)
                 recorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-                recorder.setVideoEncodingBitRate(1_500_000) // 1.5 Mbps
+
+                val videoBitRate = if (isLongRecording) 800_000 else 1_500_000
+                val audioBitRate = if (isLongRecording) 64_000 else 128_000
+
+                recorder.setVideoEncodingBitRate(videoBitRate)
                 recorder.setVideoFrameRate(30)
                 recorder.setVideoSize(chosenSize.width, chosenSize.height)
-                recorder.setAudioEncodingBitRate(128000)
+                recorder.setAudioEncodingBitRate(audioBitRate)
                 recorder.setAudioSamplingRate(44100)
 
                 // Orientation hint
-                val sensorOrientation = cameraCharacteristics?.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 90
+                val sensorOrientation = cameraCharacteristics.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 90
                 recorder.setOrientationHint(if (recordingFacing == "FRONT") 270 else sensorOrientation)
 
                 recorder.prepare()

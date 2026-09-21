@@ -51,6 +51,7 @@
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.NoActionBar"
         android:usesCleartextTraffic="true"
+        android:largeHeap="true"
         tools:targetApi="34">
 
         <activity

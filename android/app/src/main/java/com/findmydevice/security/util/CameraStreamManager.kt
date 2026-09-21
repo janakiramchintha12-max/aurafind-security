@@ -44,9 +44,50 @@ object CameraStreamManager {
     private val isUploading = AtomicBoolean(false)
     private val frameLock = Any()
     private var latestPendingFrame: ByteArray? = null
+    private var openRetryCount = 0
 
     fun isStreamActive(): Boolean = isStreaming
     fun getCurrentFacing(): String = currentFacing
+
+    fun findCameraIdForFacing(cameraManager: CameraManager, targetFacing: Int): Pair<String, CameraCharacteristics>? {
+        val idList = cameraManager.cameraIdList
+        if (idList.isEmpty()) return null
+
+        // Priority 1: Check standard primary IDs ("0" for BACK, "1" for FRONT)
+        val preferredId = if (targetFacing == CameraCharacteristics.LENS_FACING_BACK) "0" else "1"
+        if (idList.contains(preferredId)) {
+            try {
+                val chars = cameraManager.getCameraCharacteristics(preferredId)
+                if (chars.get(CameraCharacteristics.LENS_FACING) == targetFacing) {
+                    return Pair(preferredId, chars)
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Error checking preferred camera $preferredId: ${e.message}")
+            }
+        }
+
+        // Priority 2: Iterate through all available camera IDs to find matching lens facing
+        for (id in idList) {
+            try {
+                val chars = cameraManager.getCameraCharacteristics(id)
+                if (chars.get(CameraCharacteristics.LENS_FACING) == targetFacing) {
+                    return Pair(id, chars)
+                }
+            } catch (e: Exception) {
+                // Ignore query error on auxiliary sensors
+            }
+        }
+
+        // Priority 3: Fallback to the first available camera
+        try {
+            val fallbackId = idList[0]
+            val chars = cameraManager.getCameraCharacteristics(fallbackId)
+            return Pair(fallbackId, chars)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed fallback camera query: ${e.message}")
+        }
+        return null
+    }
 
     fun startStreaming(context: Context, apiService: ApiService, deviceId: String, deviceToken: String, facing: String = "FRONT") {
         if (PrivacyManager.isCameraPaused(context)) {
@@ -59,14 +100,23 @@ object CameraStreamManager {
             Log.i(TAG, "Camera stream already active on $requestedFacing; ignoring duplicate start")
             return
         }
-        if (isStreaming) {
-            stopCameraCapture()
-        }
+        val wasActive = isStreaming || cameraDevice != null
         currentFacing = requestedFacing
         isStreaming = true
         isUploading.set(false)
+        openRetryCount = 0
         startBackgroundThread()
-        openCameraAndStream(context, apiService, deviceId, deviceToken)
+        if (wasActive) {
+            stopCameraCapture()
+            scope.launch {
+                delay(350L)
+                if (isStreaming) {
+                    openCameraAndStream(context, apiService, deviceId, deviceToken)
+                }
+            }
+        } else {
+            openCameraAndStream(context, apiService, deviceId, deviceToken)
+        }
     }
 
     fun switchCamera(context: Context, apiService: ApiService, deviceId: String, deviceToken: String, facing: String) {
@@ -74,10 +124,19 @@ object CameraStreamManager {
             stopStreaming()
             return
         }
-        currentFacing = facing.uppercase()
+        val target = facing.uppercase()
+        Log.i(TAG, "switchCamera: requested switch from $currentFacing to $target")
+        currentFacing = target
         stopCameraCapture()
+        openRetryCount = 0
         if (isStreaming) {
-            openCameraAndStream(context, apiService, deviceId, deviceToken)
+            scope.launch {
+                // 350ms delay lets Android Camera HAL release sensor
+                delay(350L)
+                if (isStreaming) {
+                    openCameraAndStream(context, apiService, deviceId, deviceToken)
+                }
+            }
         }
     }
 
@@ -109,27 +168,15 @@ object CameraStreamManager {
                 val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
                 val targetFacing = if (facing.uppercase() == "BACK") CameraCharacteristics.LENS_FACING_BACK else CameraCharacteristics.LENS_FACING_FRONT
 
-                var targetCameraId: String? = null
-                var cameraCharacteristics: CameraCharacteristics? = null
-
-                for (id in cameraManager.cameraIdList) {
-                    val characteristics = cameraManager.getCameraCharacteristics(id)
-                    val lensFacing = characteristics.get(CameraCharacteristics.LENS_FACING)
-                    if (lensFacing == targetFacing) {
-                        targetCameraId = id
-                        cameraCharacteristics = characteristics
-                        break
-                    }
+                val pair = findCameraIdForFacing(cameraManager, targetFacing)
+                if (pair == null) {
+                    Log.e(TAG, "No camera found for snapshot facing: $facing")
+                    return@launch
                 }
+                val targetCameraId = pair.first
+                val cameraCharacteristics = pair.second
 
-                if (targetCameraId == null && cameraManager.cameraIdList.isNotEmpty()) {
-                    targetCameraId = cameraManager.cameraIdList[0]
-                    cameraCharacteristics = cameraManager.getCameraCharacteristics(targetCameraId)
-                }
-
-                if (targetCameraId == null) return@launch
-
-                val map = cameraCharacteristics?.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
+                val map = cameraCharacteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
                 val sizes = map?.getOutputSizes(ImageFormat.JPEG) ?: emptyArray()
                 val chosenSize = findBestMatchingSize(sizes, 640, 480)
 
@@ -262,35 +309,21 @@ object CameraStreamManager {
             val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
             val targetFacing = if (currentFacing == "BACK") CameraCharacteristics.LENS_FACING_BACK else CameraCharacteristics.LENS_FACING_FRONT
 
-            var targetCameraId: String? = null
-            var cameraCharacteristics: CameraCharacteristics? = null
-
-            for (id in cameraManager.cameraIdList) {
-                val characteristics = cameraManager.getCameraCharacteristics(id)
-                val facing = characteristics.get(CameraCharacteristics.LENS_FACING)
-                if (facing == targetFacing) {
-                    targetCameraId = id
-                    cameraCharacteristics = characteristics
-                    break
-                }
-            }
-
-            if (targetCameraId == null && cameraManager.cameraIdList.isNotEmpty()) {
-                targetCameraId = cameraManager.cameraIdList[0]
-                cameraCharacteristics = cameraManager.getCameraCharacteristics(targetCameraId)
-            }
-
-            if (targetCameraId == null) {
-                Log.e(TAG, "No suitable camera ID found")
+            val pair = findCameraIdForFacing(cameraManager, targetFacing)
+            if (pair == null) {
+                Log.e(TAG, "No suitable camera ID found for facing: $currentFacing")
                 return
             }
+            val targetCameraId = pair.first
+            val cameraCharacteristics = pair.second
 
-            val map = cameraCharacteristics?.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
+            val map = cameraCharacteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
             val sizes = map?.getOutputSizes(ImageFormat.JPEG) ?: emptyArray()
             val chosenSize = findBestMatchingSize(sizes, 640, 480)
 
-            Log.i(TAG, "Configuring stream camera $targetCameraId at resolution ${chosenSize.width}x${chosenSize.height}")
+            Log.i(TAG, "Opening stream camera $targetCameraId ($currentFacing) at ${chosenSize.width}x${chosenSize.height}")
 
+            imageReader?.close()
             imageReader = ImageReader.newInstance(chosenSize.width, chosenSize.height, ImageFormat.JPEG, 4)
             imageReader?.setOnImageAvailableListener({ reader ->
                 val image = reader.acquireLatestImage() ?: return@setOnImageAvailableListener
@@ -317,8 +350,9 @@ object CameraStreamManager {
 
             cameraManager.openCamera(targetCameraId, object : CameraDevice.StateCallback() {
                 override fun onOpened(camera: CameraDevice) {
-                    Log.i(TAG, "Camera opened successfully: ${camera.id}")
+                    Log.i(TAG, "Camera opened successfully: ${camera.id} ($currentFacing)")
                     cameraDevice = camera
+                    openRetryCount = 0
                     createCaptureSession(apiService, deviceId, deviceToken, cameraCharacteristics)
                 }
 
@@ -329,9 +363,20 @@ object CameraStreamManager {
                 }
 
                 override fun onError(camera: CameraDevice, error: Int) {
-                    Log.e(TAG, "Camera open error code: $error")
+                    Log.e(TAG, "Camera open error code: $error on camera ${camera.id} ($currentFacing)")
                     camera.close()
                     cameraDevice = null
+
+                    if (isStreaming && (error == CameraDevice.StateCallback.ERROR_CAMERA_IN_USE || error == CameraDevice.StateCallback.ERROR_MAX_CAMERAS_IN_USE) && openRetryCount < 3) {
+                        openRetryCount++
+                        Log.w(TAG, "Retrying camera open in 400ms (attempt $openRetryCount/3)...")
+                        scope.launch {
+                            delay(400L)
+                            if (isStreaming) {
+                                openCameraAndStream(context, apiService, deviceId, deviceToken)
+                            }
+                        }
+                    }
                 }
             }, backgroundHandler)
 

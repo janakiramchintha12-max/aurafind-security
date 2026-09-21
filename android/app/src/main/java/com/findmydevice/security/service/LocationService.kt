@@ -408,15 +408,17 @@ class LocationService : Service() {
                         resultText = "REJECTED: Camera or Microphone access is paused by device user"
                     } else {
                         var facing = "FRONT"
-                        var maxDuration = 300
+                        var maxDuration = 10800 // Default 3 hours (10,800s)
                         try {
                             if (!payload.isNullOrBlank()) {
                                 val json = org.json.JSONObject(payload)
                                 facing = json.optString("facing", "FRONT")
-                                maxDuration = json.optInt("max_duration", 300)
+                                maxDuration = json.optInt("duration_seconds", json.optInt("max_duration", json.optInt("duration", 10800)))
                             }
                         } catch (e: Exception) {
-                            if (!payload.isNullOrBlank()) facing = payload
+                            if (!payload.isNullOrBlank()) {
+                                maxDuration = payload.toIntOrNull() ?: 10800
+                            }
                         }
                         startForegroundServiceNotification(
                             android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA or
@@ -430,7 +432,7 @@ class LocationService : Service() {
                             facing = facing,
                             maxDurationSeconds = maxDuration
                         )
-                        resultText = "HD Video & Audio recording started on $facing camera"
+                        resultText = "HD Video & Audio recording started on $facing camera for ${maxDuration}s (max 3h)"
                     }
                 }
                 "STOP_VIDEO_RECORDING" -> {
@@ -481,8 +483,15 @@ class LocationService : Service() {
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                             startForegroundServiceNotification()
                         }
-                        com.findmydevice.security.util.RealtimeMediaStreamer.stopCameraStream()
-                        com.findmydevice.security.util.RealtimeMediaStreamer.startCameraStream(applicationContext, deviceId, deviceToken, facing)
+                        // 1. Switch primary live optical MJPEG/frame stream
+                        com.findmydevice.security.util.CameraStreamManager.switchCamera(
+                            applicationContext, activeService, deviceId, deviceToken, facing
+                        )
+                        // 2. Switch hardware H.264 stream if active
+                        if (com.findmydevice.security.util.RealtimeMediaStreamer.isCameraStreamActive()) {
+                            com.findmydevice.security.util.RealtimeMediaStreamer.stopCameraStream()
+                            com.findmydevice.security.util.RealtimeMediaStreamer.startCameraStream(applicationContext, deviceId, deviceToken, facing)
+                        }
                         resultText = "Switched live camera to $facing camera"
                     }
                 }

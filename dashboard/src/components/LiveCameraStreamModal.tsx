@@ -82,11 +82,15 @@ export const LiveCameraStreamModal: React.FC<LiveCameraStreamModalProps> = ({ de
   const [hasReceivedFirstFrame, setHasReceivedFirstFrame] = useState<boolean>(false);
   const [rawFrameSrc, setRawFrameSrc] = useState<string | null>(null);
 
-  // Video with Audio Recording State
+  // Video with Audio Recording State (Up to 3 Hours / 10,800s)
+  const [recordDuration, setRecordDuration] = useState<number>(10800); // 3 Hours (10,800s) default
+  const [recordCountdown, setRecordCountdown] = useState<number | null>(null);
   const [isRecordingVideo, setIsRecordingVideo] = useState<boolean>(false);
   const [recordingSeconds, setRecordingSeconds] = useState<number>(0);
   const [recordingStatusMsg, setRecordingStatusMsg] = useState<string>('');
   const [isStoppingRecording, setIsStoppingRecording] = useState<boolean>(false);
+  const countdownTimerRef = useRef<any>(null);
+  const currentFacingRef = useRef<'FRONT' | 'BACK'>('FRONT');
 
   // Video Recordings Archive State
   const [videoRecordings, setVideoRecordings] = useState<VideoRecording[]>([]);
@@ -145,7 +149,7 @@ export const LiveCameraStreamModal: React.FC<LiveCameraStreamModalProps> = ({ de
   // 1. WebSocket & Fast Frame Ingestion Pipeline
   useEffect(() => {
     if (activeTab === 'STREAM') {
-      commandsApi.dispatch(device.id, 'START_CAMERA_STREAM', { facing: currentFacing }).catch(console.error);
+      commandsApi.dispatch(device.id, 'START_CAMERA_STREAM', { facing: currentFacingRef.current }).catch(console.error);
     }
 
     const handleIncomingFrame = (dataUrl: string, facing?: string, timestamp?: string, seq?: number) => {
@@ -174,7 +178,13 @@ export const LiveCameraStreamModal: React.FC<LiveCameraStreamModalProps> = ({ de
         }
         setBufferQueueDepth(frameQueueRef.current.length);
         setFrameCount(c => c + 1);
-        if (facing) setCurrentFacing(facing.toUpperCase() as 'FRONT' | 'BACK');
+        if (facing) {
+          const norm = facing.toUpperCase() as 'FRONT' | 'BACK';
+          if (norm !== currentFacingRef.current) {
+            currentFacingRef.current = norm;
+            setCurrentFacing(norm);
+          }
+        }
       };
       img.src = fullSrc;
     };
@@ -199,7 +209,9 @@ export const LiveCameraStreamModal: React.FC<LiveCameraStreamModalProps> = ({ de
         setIsRecordingVideo(false);
         setIsStoppingRecording(false);
         setRecordingSeconds(0);
+        setRecordCountdown(null);
         if (recordTimerRef.current) clearInterval(recordTimerRef.current);
+        if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
         fetchVideoRecordings();
       }
     });
@@ -227,7 +239,7 @@ export const LiveCameraStreamModal: React.FC<LiveCameraStreamModalProps> = ({ de
         commandsApi.dispatch(device.id, 'STOP_CAMERA_STREAM').catch(console.error);
       }
     };
-  }, [device.id, currentFacing, activeTab]);
+  }, [device.id, activeTab]);
 
   // 2. Hardware-Accelerated 60 FPS Jitter-Buffer Renderer with Smooth Time-Pacing
   useEffect(() => {
@@ -326,15 +338,50 @@ export const LiveCameraStreamModal: React.FC<LiveCameraStreamModalProps> = ({ de
     };
   }, [streamEngine, bufferDelayMs, rotationDegrees, isMirrored, enhanceFilter, activeTab]);
 
-  // Handle Start Hardware Video + Audio Recording
+  const formatDurationDisplay = (seconds: number) => {
+    if (seconds < 60) return `${seconds}s`;
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    if (m < 60) return s > 0 ? `${m}m ${s}s` : `${m}m`;
+    const h = Math.floor(m / 60);
+    const remM = m % 60;
+    return remM > 0 ? `${h}h ${remM}m` : `${h}h`;
+  };
+
+  const formatCountdownTimer = (totalSeconds: number | null) => {
+    if (totalSeconds === null || totalSeconds < 0) return '00:00';
+    const hours = Math.floor(totalSeconds / 3600);
+    const mins = Math.floor((totalSeconds % 3600) / 60);
+    const secs = totalSeconds % 60;
+    if (hours > 0) {
+      return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    }
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const formatBytes = (bytes?: number): string => {
+    if (!bytes || bytes <= 0) return 'HD MP4';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+  };
+
+  // Handle Start Hardware Video + Audio Recording (Up to 3 Hours)
   const handleStartVideoRecording = async () => {
     try {
       setIsRecordingVideo(true);
       setRecordingSeconds(0);
-      setRecordingStatusMsg(`Starting hardware video & microphone recording on ${currentFacing} camera...`);
+      setRecordCountdown(recordDuration);
+      const readable = formatDurationDisplay(recordDuration);
+      setRecordingStatusMsg(`Starting ${readable} HD Video + Audio recording on ${currentFacing} camera...`);
 
       // Dispatch START_VIDEO_RECORDING command to phone
-      await commandsApi.dispatch(device.id, 'START_VIDEO_RECORDING', { facing: currentFacing, max_duration: 300 });
+      await commandsApi.dispatch(device.id, 'START_VIDEO_RECORDING', {
+        facing: currentFacing,
+        duration_seconds: recordDuration,
+        max_duration: recordDuration
+      });
 
       // Start elapsed timer
       if (recordTimerRef.current) clearInterval(recordTimerRef.current);
@@ -342,23 +389,45 @@ export const LiveCameraStreamModal: React.FC<LiveCameraStreamModalProps> = ({ de
         setRecordingSeconds(s => s + 1);
       }, 1000);
 
+      // Start countdown
+      let remaining = recordDuration;
+      if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
+      countdownTimerRef.current = setInterval(() => {
+        remaining -= 1;
+        if (remaining > 0) {
+          setRecordCountdown(remaining);
+        } else {
+          setRecordCountdown(0);
+          setRecordingStatusMsg('Finishing 3-hour recording & saving video with audio...');
+          if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
+          if (recordTimerRef.current) clearInterval(recordTimerRef.current);
+          setTimeout(() => {
+            fetchVideoRecordings();
+            setIsRecordingVideo(false);
+          }, 3500);
+        }
+      }, 1000);
+
     } catch (e: any) {
       alert(`Failed to start video recording: ${e?.response?.data?.detail || e.message}`);
       setIsRecordingVideo(false);
       setRecordingSeconds(0);
+      setRecordCountdown(null);
     }
   };
 
-  // Handle Stop Hardware Video + Audio Recording
+  // Handle Stop Hardware Video + Audio Recording Early
   const handleStopVideoRecording = async () => {
     try {
       setIsStoppingRecording(true);
-      setRecordingStatusMsg('Stopping recording, finalizing crystal-clear MP4 video and uploading to cloud...');
+      setRecordingStatusMsg('Stopping recording early, finalizing MP4 video with audio and uploading to cloud...');
 
       // Dispatch STOP_VIDEO_RECORDING command to phone
       await commandsApi.dispatch(device.id, 'STOP_VIDEO_RECORDING');
 
       if (recordTimerRef.current) clearInterval(recordTimerRef.current);
+      if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
+      setRecordCountdown(0);
 
       // Auto poll after 3s to refresh gallery
       setTimeout(() => {
@@ -366,11 +435,46 @@ export const LiveCameraStreamModal: React.FC<LiveCameraStreamModalProps> = ({ de
         setIsRecordingVideo(false);
         setIsStoppingRecording(false);
         setRecordingSeconds(0);
+        setRecordCountdown(null);
+        setRecordingStatusMsg('✅ HD Video with Audio uploaded successfully!');
       }, 3500);
 
     } catch (e: any) {
       alert(`Failed to stop video recording: ${e?.response?.data?.detail || e.message}`);
       setIsStoppingRecording(false);
+    }
+  };
+
+  // Handle Direct MP4 Video Download with Audio
+  const handleDownloadVideo = (rec: VideoRecording) => {
+    const url = getVideoBlobUrl(rec.video_data, rec.mime_type);
+    const a = document.createElement('a');
+    a.href = url;
+    const dateStr = new Date(rec.created_at).toISOString().slice(0, 10);
+    const durStr = Math.round(rec.duration_seconds || 0);
+    a.download = `AuraFind_${device.device_name.replace(/[^a-zA-Z0-9]/g, '_')}_${rec.facing || 'LENS'}_${durStr}s_${dateStr}.mp4`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
+
+  // Handle Explicit Lens Switching (Front vs Rear)
+  const handleSwitchLens = async (targetFacing: 'FRONT' | 'BACK') => {
+    if (loading || isRecordingVideo) return;
+    if (currentFacing === targetFacing) return;
+    setLoading(true);
+    try {
+      currentFacingRef.current = targetFacing;
+      setCurrentFacing(targetFacing);
+      setHasReceivedFirstFrame(false);
+      frameQueueRef.current = [];
+      setRecordingStatusMsg(`Switching hardware to ${targetFacing} lens...`);
+      await commandsApi.dispatch(device.id, 'SWITCH_CAMERA', { facing: targetFacing });
+    } catch (e) {
+      console.error('Failed to switch camera lens', e);
+      alert('Failed to switch camera lens');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -390,17 +494,8 @@ export const LiveCameraStreamModal: React.FC<LiveCameraStreamModalProps> = ({ de
   };
 
   const handleSwitchCamera = async () => {
-    setLoading(true);
     const nextFacing = currentFacing === 'FRONT' ? 'BACK' : 'FRONT';
-    try {
-      await commandsApi.dispatch(device.id, 'SWITCH_CAMERA', { facing: nextFacing });
-      setCurrentFacing(nextFacing);
-      frameQueueRef.current = [];
-    } catch (e) {
-      alert('Failed to switch camera lens');
-    } finally {
-      setLoading(false);
-    }
+    await handleSwitchLens(nextFacing);
   };
 
   const handleRotate = () => {
@@ -513,45 +608,18 @@ export const LiveCameraStreamModal: React.FC<LiveCameraStreamModalProps> = ({ de
         {activeTab === 'STREAM' && (
           <div className="space-y-4">
             
-            {/* Recording Control & Status Bar */}
-            <div className="bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 border border-slate-700/80 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xl">
-              <div className="flex items-center space-x-3">
-                {!isRecordingVideo ? (
-                  <button
-                    onClick={handleStartVideoRecording}
-                    className="px-5 py-2.5 bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 text-white font-black text-xs rounded-xl flex items-center space-x-2 shadow-lg shadow-rose-600/30 hover:scale-105 active:scale-95 transition-all cursor-pointer"
-                  >
-                    <Disc className="w-4 h-4 animate-spin text-white" />
-                    <span>Start Video + Audio Recording</span>
-                  </button>
-                ) : (
-                  <button
-                    onClick={handleStopVideoRecording}
-                    disabled={isStoppingRecording}
-                    className="px-5 py-2.5 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-slate-950 font-black text-xs rounded-xl flex items-center space-x-2 shadow-lg shadow-amber-500/30 hover:scale-105 active:scale-95 transition-all cursor-pointer disabled:opacity-50"
-                  >
-                    <Square className="w-4 h-4 fill-current" />
-                    <span>{isStoppingRecording ? 'Finalizing...' : 'Stop & Save Video'}</span>
-                  </button>
-                )}
-
-                {isRecordingVideo && (
-                  <div className="flex items-center gap-2 bg-rose-500/20 border border-rose-500/40 px-3 py-1.5 rounded-xl text-rose-300 text-xs font-mono font-black animate-pulse">
-                    <span className="w-2.5 h-2.5 rounded-full bg-rose-500"></span>
-                    <span>REC: {formatTimer(recordingSeconds)}</span>
-                  </div>
-                )}
+            {/* Stream Status & Active Sensor Banner */}
+            <div className="bg-slate-950/80 border border-slate-800 rounded-2xl px-4 py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-lg">
+              <div className="flex items-center space-x-2 text-xs font-mono">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                <span className="text-white font-bold">Active Sensor:</span>
+                <span className="text-cyan-400 font-extrabold">{currentFacing === 'BACK' ? '🏙️ REAR HD SENSOR' : '👤 FRONT SELFIE SENSOR'}</span>
+                <span className="text-slate-500">•</span>
+                <span className="text-slate-400">{displayFps} FPS Realtime Telemetry</span>
               </div>
-
-              <div className="text-xs text-slate-400 flex items-center gap-2 font-mono">
-                {recordingStatusMsg ? (
-                  <span className="text-cyan-300 font-bold flex items-center gap-1">
-                    <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
-                    {recordingStatusMsg}
-                  </span>
-                ) : (
-                  <span>Crystal-clear local recording bypasses live network audio glitches</span>
-                )}
+              <div className="text-xs text-slate-400 font-mono flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
+                <span>{recordingStatusMsg || 'Silent background surveillance active • 3-Hour Video+Audio ready'}</span>
               </div>
             </div>
 
@@ -649,47 +717,239 @@ export const LiveCameraStreamModal: React.FC<LiveCameraStreamModalProps> = ({ de
               </div>
             </div>
 
-            {/* Tactical Controls Toolbar */}
-            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-              <button
-                onClick={handleSwitchCamera}
-                disabled={loading || isRecordingVideo}
-                className={`p-3 rounded-2xl border text-xs font-black flex items-center justify-center space-x-2 transition-all shadow-lg cursor-pointer ${
-                  currentFacing === 'FRONT'
-                    ? 'bg-purple-600/30 hover:bg-purple-600/50 text-purple-200 border-purple-500/50 shadow-purple-600/20'
-                    : 'bg-cyan-600/30 hover:bg-cyan-600/50 text-cyan-200 border-cyan-500/50 shadow-cyan-600/20'
-                }`}
-              >
-                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-                <span>Switch to {currentFacing === 'FRONT' ? '🏙️ Rear Lens' : '👤 Front Lens'}</span>
-              </button>
+            {/* 3-HOUR HD VIDEO & AUDIO RECORDING & DOWNLOAD CONSOLE */}
+            <div className="bg-gradient-to-br from-slate-900 via-slate-950 to-slate-900 border border-cyan-500/40 rounded-3xl p-5 sm:p-6 shadow-2xl space-y-5">
+              
+              {/* Top Row: Title & Lens Switching Toggle */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+                <div className="flex items-center space-x-3">
+                  <div className="p-3 bg-gradient-to-br from-rose-500/20 to-cyan-500/20 text-cyan-400 border border-cyan-500/30 rounded-2xl shadow-inner">
+                    <Film className="w-6 h-6 text-cyan-400" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black text-white flex items-center gap-2">
+                      <span>3-Hour HD Video & Audio Recording Console</span>
+                      <span className="text-[10px] bg-gradient-to-r from-cyan-500 to-emerald-500 text-slate-950 font-black px-2 py-0.5 rounded-full uppercase tracking-wider">
+                        Crystal-Clear AAC Audio
+                      </span>
+                    </h3>
+                    <p className="text-xs text-slate-400">
+                      Record continuous video with hardware microphone audio up to 3 hours (10,800s) on-device, then download MP4 instantly.
+                    </p>
+                  </div>
+                </div>
 
-              <button
-                onClick={handleRotate}
-                className="p-3 bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 rounded-2xl text-xs font-bold flex items-center justify-center space-x-2 transition-all cursor-pointer"
-              >
-                <RotateCw className="w-4 h-4" />
-                <span>Rotate ({rotationDegrees}°)</span>
-              </button>
+                {/* Lens Selector Toggle */}
+                <div className="flex items-center space-x-2 bg-slate-950 p-1.5 rounded-2xl border border-slate-800">
+                  <span className="text-[11px] font-mono text-slate-400 font-bold px-2">Lens:</span>
+                  <button
+                    onClick={() => handleSwitchLens('FRONT')}
+                    disabled={loading || isRecordingVideo}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                      currentFacing === 'FRONT'
+                        ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30'
+                        : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                    }`}
+                  >
+                    <span>👤 Front Lens</span>
+                  </button>
 
-              <button
-                onClick={handleCaptureSnapshot}
-                disabled={!hasReceivedFirstFrame}
-                className="p-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-2xl text-xs font-black flex items-center justify-center space-x-2 transition-all shadow-lg shadow-emerald-600/20 disabled:opacity-50 cursor-pointer"
-              >
-                <Camera className="w-4 h-4" />
-                <span>Instant Photo</span>
-              </button>
+                  <button
+                    onClick={() => handleSwitchLens('BACK')}
+                    disabled={loading || isRecordingVideo}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                      currentFacing === 'BACK'
+                        ? 'bg-cyan-500 text-slate-950 font-black shadow-lg shadow-cyan-500/30'
+                        : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                    }`}
+                  >
+                    <span>🏙️ Rear Lens</span>
+                  </button>
+                </div>
+              </div>
 
-              <button
-                onClick={() => {
-                  commandsApi.dispatch(device.id, 'PLAY_ALARM');
-                }}
-                className="p-3 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 rounded-2xl text-xs font-black flex items-center justify-center space-x-2 transition-all shadow-lg cursor-pointer"
-              >
-                <Radio className="w-4 h-4 text-amber-400" />
-                <span>Siren Alarm</span>
-              </button>
+              {/* Middle Section: Duration Presets & Custom Slider */}
+              <div className="space-y-3 bg-slate-950/60 border border-slate-800/80 rounded-2xl p-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-xs font-bold text-slate-300">
+                    <Clock className="w-4 h-4 text-cyan-400" />
+                    <span>Choose Recording Duration (Up to 3 Hours):</span>
+                  </div>
+                  <span className="text-xs font-bold text-cyan-400 font-mono bg-cyan-950/80 px-2.5 py-1 rounded-lg border border-cyan-500/30 shadow-sm">
+                    Target: {formatDurationDisplay(recordDuration)}
+                  </span>
+                </div>
+
+                {/* Preset Pills */}
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    { label: '30s', val: 30 },
+                    { label: '1m', val: 60 },
+                    { label: '5m', val: 300 },
+                    { label: '15m', val: 900 },
+                    { label: '30m', val: 1800 },
+                    { label: '1h', val: 3600 },
+                    { label: '2h', val: 7200 },
+                    { label: '3h (Max)', val: 10800 }
+                  ].map(p => (
+                    <button
+                      key={p.val}
+                      onClick={() => setRecordDuration(p.val)}
+                      disabled={isRecordingVideo}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                        recordDuration === p.val
+                          ? 'bg-cyan-500 text-slate-950 border-cyan-400 shadow-md shadow-cyan-500/25 scale-105 font-black'
+                          : 'bg-slate-800/80 hover:bg-slate-700/80 text-slate-300 border-slate-700'
+                      }`}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Slider */}
+                <div className="flex items-center gap-3 pt-1">
+                  <span className="text-[11px] font-mono text-slate-400 min-w-[55px]">Slider:</span>
+                  <input
+                    type="range"
+                    min="10"
+                    max="10800"
+                    step="30"
+                    value={recordDuration}
+                    disabled={isRecordingVideo}
+                    onChange={(e) => setRecordDuration(parseInt(e.target.value))}
+                    className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-cyan-400"
+                  />
+                  <span className="text-xs font-mono font-bold text-cyan-300 min-w-[70px] text-right">
+                    {formatDurationDisplay(recordDuration)}
+                  </span>
+                </div>
+              </div>
+
+              {/* Action Buttons & Live Recording Progress */}
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                
+                {/* Trigger Button or Live Progress */}
+                <div className="flex-1">
+                  {!isRecordingVideo ? (
+                    <button
+                      onClick={handleStartVideoRecording}
+                      className="w-full sm:w-auto px-8 py-3.5 bg-gradient-to-r from-rose-600 via-pink-600 to-red-600 hover:from-rose-500 hover:to-red-500 text-white font-black text-sm rounded-2xl flex items-center justify-center space-x-3 shadow-xl shadow-rose-600/30 hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer"
+                    >
+                      <Disc className="w-5 h-5 animate-spin text-white" />
+                      <span>Start {formatDurationDisplay(recordDuration)} HD Video + Audio Recording ({currentFacing === 'BACK' ? '🏙️ Rear' : '👤 Front'})</span>
+                    </button>
+                  ) : (
+                    <div className="space-y-2 bg-slate-950/80 border border-rose-500/40 rounded-2xl p-4 shadow-xl">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2 text-rose-400 font-black text-xs font-mono animate-pulse">
+                          <span className="w-2.5 h-2.5 rounded-full bg-rose-500"></span>
+                          <span>RECORDING ON PHONE ({formatCountdownTimer(recordCountdown)} remaining)</span>
+                        </div>
+                        <span className="text-xs font-mono text-slate-400">
+                          Elapsed: {formatTimer(recordingSeconds)} / {formatDurationDisplay(recordDuration)}
+                        </span>
+                      </div>
+                      
+                      {/* Animated Progress Bar */}
+                      <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
+                        <div
+                          className="bg-gradient-to-r from-rose-500 via-pink-500 to-cyan-400 h-2 transition-all duration-1000 ease-linear rounded-full"
+                          style={{
+                            width: recordDuration > 0 ? `${Math.min(100, Math.max(3, (recordingSeconds / recordDuration) * 100))}%` : '5%'
+                          }}
+                        />
+                      </div>
+
+                      <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1">
+                        <span className="font-mono">{recordingStatusMsg || 'Silently saving video & audio without cellular interruption...'}</span>
+                        <button
+                          onClick={handleStopVideoRecording}
+                          disabled={isStoppingRecording}
+                          className="px-4 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-xl text-xs flex items-center gap-1.5 shadow-lg shadow-amber-500/30 cursor-pointer disabled:opacity-50"
+                        >
+                          <Square className="w-3.5 h-3.5 fill-current" />
+                          <span>{isStoppingRecording ? 'Finalizing...' : 'Stop & Upload Now'}</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Compact Auxiliary Tools: Rotate, Instant Photo, Alarm */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    onClick={handleRotate}
+                    className="p-3 bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 rounded-2xl text-xs font-bold flex items-center justify-center space-x-1.5 transition-all cursor-pointer"
+                    title="Rotate Camera Display"
+                  >
+                    <RotateCw className="w-4 h-4" />
+                    <span>Rotate ({rotationDegrees}°)</span>
+                  </button>
+
+                  <button
+                    onClick={handleCaptureSnapshot}
+                    disabled={!hasReceivedFirstFrame}
+                    className="p-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-2xl text-xs font-black flex items-center justify-center space-x-1.5 transition-all shadow-md shadow-emerald-600/20 disabled:opacity-50 cursor-pointer"
+                    title="Capture Instant High-Res Photo"
+                  >
+                    <Camera className="w-4 h-4" />
+                    <span>Snapshot</span>
+                  </button>
+
+                  <button
+                    onClick={() => commandsApi.dispatch(device.id, 'PLAY_ALARM')}
+                    className="p-3 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 rounded-2xl text-xs font-black flex items-center justify-center space-x-1.5 transition-all shadow-md cursor-pointer"
+                    title="Trigger Loudspeaker Siren Alarm"
+                  >
+                    <Radio className="w-4 h-4 text-amber-400" />
+                    <span>Siren</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Bottom Row: Latest Video Card & Direct 1-Click MP4 Download */}
+              {videoRecordings.length > 0 && (
+                <div className="border-t border-slate-800/80 pt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-950/40 p-4 rounded-2xl border border-slate-800">
+                  <div className="flex items-center space-x-3">
+                    <div className="p-2.5 bg-emerald-500/20 text-emerald-400 rounded-xl border border-emerald-500/30">
+                      <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-white flex items-center gap-2">
+                        <span>Latest HD Video Recording Ready</span>
+                        <span className="text-[10px] font-mono bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded border border-emerald-500/40">
+                          {Math.round(videoRecordings[0].duration_seconds)}s • {videoRecordings[0].facing || 'HD'} Lens
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-400">
+                        {new Date(videoRecordings[0].created_at).toLocaleString()} • Ready for offline playback with synchronized audio
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center space-x-2">
+                    <button
+                      onClick={() => handleDownloadVideo(videoRecordings[0])}
+                      className="px-5 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-xs rounded-xl flex items-center space-x-2 shadow-lg shadow-emerald-500/30 hover:scale-105 active:scale-95 transition-all cursor-pointer"
+                    >
+                      <Download className="w-4 h-4" />
+                      <span>Download MP4 Video with Audio</span>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        setActiveTab('RECORDINGS');
+                        setActivePlaybackVideo(videoRecordings[0]);
+                      }}
+                      className="px-3 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold border border-slate-700 transition-all cursor-pointer"
+                      title="Open full recordings player"
+                    >
+                      <span>Player Library ({videoRecordings.length})</span>
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
