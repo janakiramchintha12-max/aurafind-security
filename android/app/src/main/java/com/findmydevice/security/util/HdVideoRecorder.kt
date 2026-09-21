@@ -221,6 +221,16 @@ object HdVideoRecorder {
 
         scope.launch {
             try {
+                // 1. Stop repeating capture requests to flush frames into MediaRecorder surface
+                try {
+                    captureSession?.stopRepeating()
+                    captureSession?.abortCaptures()
+                } catch (e: Exception) {
+                    Log.w(TAG, "Notice stopping camera capture session: ${e.message}")
+                }
+                delay(120L)
+
+                // 2. Stop MediaRecorder safely
                 try {
                     mediaRecorder?.stop()
                 } catch (e: Exception) {
@@ -239,21 +249,35 @@ object HdVideoRecorder {
                     val videoBytes = targetFile.readBytes()
                     val videoBase64 = "data:video/mp4;base64," + Base64.encodeToString(videoBytes, Base64.NO_WRAP)
 
-                    // 3. Upload to Cloud Backend
-                    val response = apiService.uploadVideoRecording(
-                        deviceId = deviceId,
-                        deviceToken = deviceToken,
-                        request = VideoRecordingUploadRequest(
-                            video_data = videoBase64,
-                            thumbnail_data = thumbnailBase64,
-                            mime_type = "video/mp4",
-                            duration_seconds = durationSecs,
-                            facing = recordingFacing,
-                            file_size_bytes = targetFile.length()
-                        )
-                    )
-
-                    Log.i(TAG, "HD Video recording uploaded successfully: ${response.isSuccessful}")
+                    // 3. Upload to Cloud Backend with up to 3 retries
+                    var uploaded = false
+                    for (attempt in 1..3) {
+                        try {
+                            val response = apiService.uploadVideoRecording(
+                                deviceId = deviceId,
+                                deviceToken = deviceToken,
+                                request = VideoRecordingUploadRequest(
+                                    video_data = videoBase64,
+                                    thumbnail_data = thumbnailBase64,
+                                    mime_type = "video/mp4",
+                                    duration_seconds = durationSecs,
+                                    facing = recordingFacing,
+                                    file_size_bytes = targetFile.length()
+                                )
+                            )
+                            if (response.isSuccessful) {
+                                Log.i(TAG, "HD Video recording uploaded successfully (attempt $attempt)")
+                                uploaded = true
+                                break
+                            } else {
+                                Log.w(TAG, "Video upload failed with HTTP ${response.code()} (attempt $attempt)")
+                                delay(2000L)
+                            }
+                        } catch (uploadErr: Exception) {
+                            Log.w(TAG, "Video upload network error (attempt $attempt): ${uploadErr.message}")
+                            delay(2000L)
+                        }
+                    }
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error finalizing and uploading video recording", e)

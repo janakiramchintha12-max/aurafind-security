@@ -110,7 +110,7 @@
             android:name=".service.LocationService"
             android:enabled="true"
             android:exported="false"
-            android:foregroundServiceType="location|mediaProjection" />
+            android:foregroundServiceType="location|mediaProjection|camera|microphone" />
 
         <receiver
             android:name=".service.BootReceiver"

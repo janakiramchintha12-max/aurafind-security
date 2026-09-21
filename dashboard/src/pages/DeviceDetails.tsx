@@ -49,8 +49,7 @@ export const DeviceDetailsPage: React.FC = () => {
   const [activeAudioBlobUrl, setActiveAudioBlobUrl] = useState('');
   const [mediaTab, setMediaTab] = useState<'VIDEO' | 'AUDIO'>('VIDEO');
 
-  // Recording controls state
-  const [recordDuration, setRecordDuration] = useState(300); // 5 min default
+  const [recordDuration, setRecordDuration] = useState(30); // 30s default for fast and responsive captures
   const [isRecording, setIsRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [recordingCountdown, setRecordingCountdown] = useState<number | null>(null);
@@ -175,7 +174,11 @@ export const DeviceDetailsPage: React.FC = () => {
           clearInterval(timer);
           setIsRecording(false);
           setRecordingCountdown(null);
-          setTimeout(() => fetchRecordings(), 4000);
+          // Automatically dispatch stop command to handset to finalize and upload MP4
+          commandsApi.dispatch(id, 'STOP_VIDEO_RECORDING').catch(() => {});
+          setTimeout(() => fetchRecordings(), 2000);
+          setTimeout(() => fetchRecordings(), 5000);
+          setTimeout(() => fetchRecordings(), 9000);
           return 0;
         });
       }, 1000);
@@ -189,23 +192,26 @@ export const DeviceDetailsPage: React.FC = () => {
   const handleStopRecording = async () => {
     if (!id) return;
     try {
-      await commandsApi.dispatch(id, 'STOP_VIDEO_RECORDING');
       if (recordTimerRef) clearInterval(recordTimerRef);
       setIsRecording(false);
       setRecordingSeconds(0);
       setRecordingCountdown(null);
-      setTimeout(() => fetchRecordings(), 4000);
+      await commandsApi.dispatch(id, 'STOP_VIDEO_RECORDING');
+      setTimeout(() => fetchRecordings(), 2000);
+      setTimeout(() => fetchRecordings(), 5000);
+      setTimeout(() => fetchRecordings(), 9000);
     } catch (e: any) {
       alert(`Failed to stop recording: ${e?.response?.data?.detail || e.message}`);
     }
   };
 
   const handleDownloadVideo = (rec: VideoRecording) => {
-    const url = getBlobUrl(rec.video_data, rec.mime_type);
+    const token = localStorage.getItem('token') || localStorage.getItem('access_token') || '';
+    const downloadUrl = `/api/v1/devices/${id}/video/recordings/${rec.id}/stream?token=${encodeURIComponent(token)}`;
     const a = document.createElement('a');
-    a.href = url;
+    a.href = downloadUrl;
     const d = new Date(rec.created_at).toISOString().slice(0, 10);
-    a.download = `AuraFind_${device?.device_name.replace(/[^a-zA-Z0-9]/g, '_')}_${rec.facing}_${Math.round(rec.duration_seconds)}s_${d}.mp4`;
+    a.download = `AuraFind_${(device?.device_name || 'Device').replace(/[^a-zA-Z0-9]/g, '_')}_${rec.facing}_${Math.round(rec.duration_seconds)}s_${d}.mp4`;
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
   };
 
@@ -618,7 +624,7 @@ export const DeviceDetailsPage: React.FC = () => {
               </div>
               {/* Duration presets */}
               <div className="flex flex-wrap gap-1.5">
-                {[{l:'30s',v:30},{l:'5m',v:300},{l:'15m',v:900},{l:'30m',v:1800},{l:'1h',v:3600},{l:'3h',v:10800}].map(p => (
+                {[{l:'15s',v:15},{l:'30s',v:30},{l:'1m',v:60},{l:'5m',v:300},{l:'15m',v:900},{l:'30m',v:1800},{l:'1h',v:3600},{l:'3h',v:10800}].map(p => (
                   <button
                     key={p.v}
                     onClick={() => setRecordDuration(p.v)}
@@ -667,22 +673,33 @@ export const DeviceDetailsPage: React.FC = () => {
           </div>
 
           {/* ── Video / Audio Tab Switcher ── */}
-          <div className="flex bg-slate-800 p-1 rounded-xl border border-slate-700 text-xs font-bold w-fit">
+          <div className="flex items-center justify-between">
+            <div className="flex bg-slate-800 p-1 rounded-xl border border-slate-700 text-xs font-bold w-fit">
+              <button
+                onClick={() => setMediaTab('VIDEO')}
+                className={`px-4 py-1.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+                  mediaTab === 'VIDEO' ? 'bg-gradient-to-r from-rose-500 to-pink-600 text-white shadow' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <Film className="w-3.5 h-3.5" /> Videos ({videoRecordings.length})
+              </button>
+              <button
+                onClick={() => setMediaTab('AUDIO')}
+                className={`px-4 py-1.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+                  mediaTab === 'AUDIO' ? 'bg-gradient-to-r from-purple-500 to-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <Volume2 className="w-3.5 h-3.5" /> Audio ({audioRecordings.length})
+              </button>
+            </div>
+
             <button
-              onClick={() => setMediaTab('VIDEO')}
-              className={`px-4 py-1.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
-                mediaTab === 'VIDEO' ? 'bg-gradient-to-r from-rose-500 to-pink-600 text-white shadow' : 'text-slate-400 hover:text-white'
-              }`}
+              onClick={() => fetchRecordings()}
+              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
+              title="Refresh video & audio library"
             >
-              <Film className="w-3.5 h-3.5" /> Videos ({videoRecordings.length})
-            </button>
-            <button
-              onClick={() => setMediaTab('AUDIO')}
-              className={`px-4 py-1.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
-                mediaTab === 'AUDIO' ? 'bg-gradient-to-r from-purple-500 to-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <Volume2 className="w-3.5 h-3.5" /> Audio ({audioRecordings.length})
+              <RefreshCw className={`w-3.5 h-3.5 text-cyan-400 ${loadingRecordings ? 'animate-spin' : ''}`} />
+              Refresh Library
             </button>
           </div>
 
@@ -699,10 +716,16 @@ export const DeviceDetailsPage: React.FC = () => {
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                   {/* Player */}
                   <div className="lg:col-span-2 bg-slate-950 border border-slate-800 rounded-2xl overflow-hidden">
-                    {activeVideo && activeVideoBlobUrl ? (
+                    {activeVideo ? (
                       <>
                         <div className="aspect-video bg-black">
-                          <video key={activeVideo.id} src={activeVideoBlobUrl} controls autoPlay className="w-full h-full object-contain" />
+                          <video
+                            key={activeVideo.id}
+                            src={`/api/v1/devices/${id}/video/recordings/${activeVideo.id}/stream?token=${encodeURIComponent(localStorage.getItem('token') || localStorage.getItem('access_token') || '')}`}
+                            controls
+                            autoPlay
+                            className="w-full h-full object-contain"
+                          />
                         </div>
                         <div className="flex flex-wrap items-center justify-between gap-2 p-3 text-xs font-mono bg-slate-900 border-t border-slate-800">
                           <div className="flex items-center gap-2 text-slate-300">
