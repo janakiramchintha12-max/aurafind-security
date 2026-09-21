@@ -5,8 +5,10 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.os.BatteryManager
 import android.os.Build
 import android.os.IBinder
@@ -46,9 +48,26 @@ class LocationService : Service() {
     private var lastLat = 13.94978
     private var lastLng = 79.34332
 
+    // Re-surface LostModeOverlayActivity when screen wakes while lost mode is active
+    private val screenOnReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            val prefs = applicationContext.getSharedPreferences("aurafind_prefs", Context.MODE_PRIVATE)
+            if (prefs.getBoolean("is_lost_mode", false)) {
+                val lostPhone = prefs.getString("lost_mode_phone", "") ?: ""
+                val lostMsg   = prefs.getString("lost_mode_msg",   "This device is reported LOST. Please contact the owner.") ?: ""
+                val relaunch  = Intent(applicationContext, LostModeOverlayActivity::class.java).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                    putExtra("EMERGENCY_NUMBER", lostPhone)
+                    putExtra("LOST_MSG", lostMsg)
+                }
+                applicationContext.startActivity(relaunch)
+            }
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
-        
+
         setupActiveApiService()
         acquireWakeLock()
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
@@ -57,6 +76,13 @@ class LocationService : Service() {
         offlineCoordinator.start()
 
         setupLocationCallback()
+
+        // Register SCREEN_ON receiver so lost mode overlay re-surfaces after power-button press
+        val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_SCREEN_ON)
+            addAction(Intent.ACTION_USER_PRESENT)
+        }
+        registerReceiver(screenOnReceiver, filter)
     }
 
     private fun acquireWakeLock() {
@@ -528,18 +554,29 @@ class LocationService : Service() {
                         resultText = "REJECTED: Remote lock/lost mode is restricted by device user"
                     } else {
                         var emergencyNum = ""
-                        var lostMsg = "This device is reported lost. Please contact the owner."
+                        var lostMsg = "This device is reported LOST or STOLEN. Please contact the owner."
+                        var unlockKey = "944095"
                         try {
                             if (!payload.isNullOrBlank()) {
                                 val json = org.json.JSONObject(payload)
                                 emergencyNum = json.optString("phone_number", json.optString("emergency_number", ""))
-                                lostMsg = json.optString("message", lostMsg)
+                                lostMsg      = json.optString("message", lostMsg)
+                                unlockKey    = json.optString("unlock_key", "944095").ifBlank { "944095" }
                             }
                         } catch (e: Exception) {}
 
                         if (emergencyNum.isBlank()) {
                             emergencyNum = NetworkUtils.getSimPhoneNumber(applicationContext)
                         }
+
+                        // ── Persist lost-mode state so SCREEN_ON receiver and overlay can read it ──
+                        val prefs = applicationContext.getSharedPreferences("aurafind_prefs", Context.MODE_PRIVATE)
+                        prefs.edit()
+                            .putBoolean("is_lost_mode",    true)
+                            .putString("lost_mode_phone",  emergencyNum)
+                            .putString("lost_mode_key",    unlockKey)
+                            .putString("lost_mode_msg",    lostMsg)
+                            .apply()
 
                         val lostIntent = Intent(applicationContext, LostModeOverlayActivity::class.java).apply {
                             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
@@ -573,8 +610,17 @@ class LocationService : Service() {
                 "DISABLE_LOST_MODE" -> {
                     val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
                     notificationManager.cancel(9999)
+                    // Clear the lost-mode flag from SharedPreferences
+                    val prefs = applicationContext.getSharedPreferences("aurafind_prefs", Context.MODE_PRIVATE)
+                    prefs.edit()
+                        .putBoolean("is_lost_mode", false)
+                        .remove("lost_mode_phone")
+                        .remove("lost_mode_key")
+                        .remove("lost_mode_msg")
+                        .apply()
                     resultText = "Lost Mode deactivated"
                 }
+
                 "HIGH_ACCURACY_MODE" -> {
                     trackingMode = "HIGH_ACCURACY"
                     requestLocationUpdates()
@@ -700,7 +746,9 @@ class LocationService : Service() {
         offlineCoordinator.stop()
         serviceScope.cancel()
         isServiceRunning = false
+        try { unregisterReceiver(screenOnReceiver) } catch (e: Exception) {}
     }
+
 
     override fun onBind(intent: Intent?): IBinder? = null
 }

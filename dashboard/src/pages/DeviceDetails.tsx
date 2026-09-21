@@ -97,15 +97,48 @@ export const DeviceDetailsPage: React.FC = () => {
     }
   };
 
+  // Lost Mode Modal State
+  const [lostModeModalOpen, setLostModeModalOpen] = useState(false);
+  const [lostModePhone, setLostModePhone] = useState('');
+  const [lostModeKey] = useState('944095');
+
   const handleToggleLostMode = async () => {
     if (!id || !device) return;
-    const action = device.is_lost_mode ? 'DISABLE_LOST_MODE' : 'ENABLE_LOST_MODE';
+    if (device.is_lost_mode) {
+      // Disable – no modal needed
+      try {
+        await commandsApi.dispatch(id, 'DISABLE_LOST_MODE');
+        await devicesApi.update(id, { is_lost_mode: false });
+        fetchDetails();
+        alert('Lost Mode deactivated successfully.');
+      } catch (e) {
+        alert('Failed to deactivate lost mode');
+      }
+    } else {
+      // Show modal to collect owner's alternate number
+      setLostModePhone('');
+      setLostModeModalOpen(true);
+    }
+  };
+
+  const handleEnableLostMode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!id || !lostModePhone.trim()) {
+      alert('Please enter the owner\'s alternate contact number.');
+      return;
+    }
     try {
-      await commandsApi.dispatch(id, action);
-      await devicesApi.update(id, { is_lost_mode: !device.is_lost_mode });
+      await commandsApi.dispatch(id, 'ENABLE_LOST_MODE', {
+        phone_number: lostModePhone.trim(),
+        unlock_key: lostModeKey,
+        message: 'This device has been reported LOST or STOLEN. All activity is being monitored.',
+      });
+      await devicesApi.update(id, { is_lost_mode: true });
+      setLostModeModalOpen(false);
       fetchDetails();
+      alert(`Lost Mode ENABLED!\nPhone displayed: ${lostModePhone.trim()}\nExit key: ${lostModeKey}`);
     } catch (e) {
-      alert('Failed to update lost mode');
+      alert('Failed to enable lost mode');
     }
   };
 
@@ -719,6 +752,71 @@ export const DeviceDetailsPage: React.FC = () => {
           onClose={() => setPairingModalOpen(false)}
           onSuccess={fetchDetails}
         />
+      )}
+
+      {/* ── Lost Mode Activation Modal ─────────────────────────────────── */}
+      {lostModeModalOpen && (
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-rose-500/40 rounded-2xl p-6 w-full max-w-md shadow-2xl space-y-5">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-bold text-rose-400 flex items-center space-x-2">
+                <Lock className="w-5 h-5" />
+                <span>Enable Lost Mode</span>
+              </h2>
+              <button onClick={() => setLostModeModalOpen(false)} className="text-slate-400 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="bg-rose-900/20 border border-rose-500/30 rounded-xl p-4 text-xs text-rose-300 space-y-1">
+              <p className="font-bold">⚠️ LOST MODE LOCKDOWN</p>
+              <p>The phone will be completely locked. Only the owner's contact number and the exit key will be shown. No other functions will work, even the power button.</p>
+            </div>
+
+            <form onSubmit={handleEnableLostMode} className="space-y-4">
+              <div>
+                <label className="text-xs font-bold text-slate-300 uppercase tracking-wide block mb-1">
+                  📞 Owner's Alternate Contact Number
+                </label>
+                <input
+                  type="tel"
+                  value={lostModePhone}
+                  onChange={e => setLostModePhone(e.target.value)}
+                  placeholder="e.g. +91 9876543210"
+                  required
+                  className="w-full px-4 py-3 bg-slate-800 border border-slate-600 rounded-xl text-white placeholder-slate-500 text-sm focus:outline-none focus:border-rose-500"
+                />
+                <p className="text-[11px] text-slate-500 mt-1">This number will be displayed on the locked screen for people to call.</p>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-300 uppercase tracking-wide block mb-1">
+                  🔑 Master Exit Key
+                </label>
+                <div className="flex items-center space-x-2 px-4 py-3 bg-slate-800/60 border border-slate-700 rounded-xl">
+                  <span className="text-white font-mono font-bold text-lg tracking-widest">{lostModeKey}</span>
+                  <span className="text-slate-500 text-xs">(fixed — used to exit lost mode on device)</span>
+                </div>
+              </div>
+
+              <div className="flex space-x-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setLostModeModalOpen(false)}
+                  className="flex-1 py-2.5 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-xl text-sm font-semibold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-sm font-bold"
+                >
+                  🔒 Activate Lost Mode
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
 
     </div>
