@@ -319,7 +319,7 @@ object CameraStreamManager {
 
             val map = cameraCharacteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
             val sizes = map?.getOutputSizes(ImageFormat.JPEG) ?: emptyArray()
-            val chosenSize = findBestMatchingSize(sizes, 640, 480)
+            val chosenSize = findBestMatchingSize(sizes, 1280, 720)
 
             Log.i(TAG, "Opening stream camera $targetCameraId ($currentFacing) at ${chosenSize.width}x${chosenSize.height}")
 
@@ -460,7 +460,8 @@ object CameraStreamManager {
                                 set(CaptureRequest.CONTROL_AE_MODE, CameraMetadata.CONTROL_AE_MODE_ON)
                             }
 
-                            set(CaptureRequest.JPEG_QUALITY, 55.toByte())
+                            // 80% JPEG quality ensures crystal-clear HD optics
+                            set(CaptureRequest.JPEG_QUALITY, 80.toByte())
 
                             if (isTorchOn && currentFacing == "BACK") {
                                 set(CaptureRequest.FLASH_MODE, CameraMetadata.FLASH_MODE_TORCH)

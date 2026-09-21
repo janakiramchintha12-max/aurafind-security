@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Smartphone, Battery, Wifi, Radio, Key, Trash2, ArrowLeft, RefreshCw, MapPin, Bell, BellOff, Lock, Camera, AlertTriangle, ShieldAlert, Volume2, FileText, ShieldCheck, Gauge, Video, Edit3, Save, X, Phone, QrCode, BarChart3, MessageSquare, Clock, Film, Download, Play, Disc, Square } from 'lucide-react';
+import { Smartphone, Battery, Wifi, Radio, Key, Trash2, ArrowLeft, RefreshCw, MapPin, Bell, BellOff, Lock, Camera, AlertTriangle, ShieldAlert, Volume2, FileText, ShieldCheck, Gauge, Video, Edit3, Save, X, Phone, QrCode, BarChart3, MessageSquare, Clock, Film, Download, Play, Disc, Square, Tv } from 'lucide-react';
 import { devicesApi, commandsApi, snapshotsApi, locationsApi, parentalApi, videoApi, audioApi } from '../services/api';
 import { Device, Command, Snapshot, LocationRecord, VideoRecording, AudioRecording } from '../types';
 import { PoliceReportModal } from '../components/PoliceReportModal';
 import { LiveCameraStreamModal } from '../components/LiveCameraStreamModal';
+import { LiveScreenMirrorModal } from '../components/LiveScreenMirrorModal';
 import { DeviceEnrollmentModal } from '../components/DeviceEnrollmentModal';
 
 export const DeviceDetailsPage: React.FC = () => {
@@ -35,6 +36,8 @@ export const DeviceDetailsPage: React.FC = () => {
 
   // Live Camera Stream Modal State
   const [cameraModalOpen, setCameraModalOpen] = useState(false);
+  // Live Screen Mirror Modal State
+  const [screenMirrorModalOpen, setScreenMirrorModalOpen] = useState(false);
 
   // ── Video & Audio Recordings State ──────────────────────────────────────────
   const [videoRecordings, setVideoRecordings] = useState<VideoRecording[]>([]);
@@ -544,6 +547,13 @@ export const DeviceDetailsPage: React.FC = () => {
               <Video className="w-3.5 h-3.5 text-rose-400 animate-pulse" />
               Live Camera
             </button>
+            <button
+              onClick={() => setScreenMirrorModalOpen(true)}
+              className="px-3 py-2 bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-200 border border-indigo-500/40 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all"
+            >
+              <Tv className="w-3.5 h-3.5 text-indigo-400 animate-pulse" />
+              Screen Mirror
+            </button>
             <button onClick={() => handleSendCommand('LOCATE_NOW')} className="px-3 py-2 bg-cyan-600/20 hover:bg-cyan-600/30 text-cyan-300 border border-cyan-500/30 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all">
               <MapPin className="w-3.5 h-3.5" /> Locate Now
             </button>
@@ -1052,6 +1062,14 @@ export const DeviceDetailsPage: React.FC = () => {
         <LiveCameraStreamModal
           device={device}
           onClose={() => setCameraModalOpen(false)}
+        />
+      )}
+
+      {/* Live Screen Mirror Modal */}
+      {screenMirrorModalOpen && (
+        <LiveScreenMirrorModal
+          device={device}
+          onClose={() => setScreenMirrorModalOpen(false)}
         />
       )}
 

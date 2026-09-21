@@ -106,10 +106,10 @@ object ScreenMirrorManager {
             wm.defaultDisplay.getRealMetrics(metrics)
 
             screenDensity = metrics.densityDpi
-            // Scale down to 540x960 (or aspect proportional) for ultra-low latency & high FPS
+            // HD 720p quality: clear text and crystal clear movies/playback
             val aspectRatio = metrics.heightPixels.toFloat() / metrics.widthPixels.toFloat()
-            targetWidth = 540
-            targetHeight = (540 * aspectRatio).toInt()
+            targetWidth = 720
+            targetHeight = (720 * aspectRatio).toInt()
             if (targetHeight % 2 != 0) targetHeight += 1
 
             mediaProjectionManager = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
@@ -179,7 +179,7 @@ object ScreenMirrorManager {
 
             isMirroring = true
             isStreamingActive = true
-            Log.i(TAG, "Parental Live Screen Mirroring started (${targetWidth}x${targetHeight} @ 20 FPS).")
+            Log.i(TAG, "Parental Live Screen Mirroring started (${targetWidth}x${targetHeight} HD).")
 
         } catch (e: Exception) {
             Log.e(TAG, "Error starting Screen Mirroring: ${e.message}", e)
@@ -200,7 +200,8 @@ object ScreenMirrorManager {
                         } ?: break
 
                         val stream = ByteArrayOutputStream()
-                        bitmap.compress(Bitmap.CompressFormat.JPEG, 60, stream)
+                        // 80% JPEG quality provides crisp detail even for subtitles/movie text
+                        bitmap.compress(Bitmap.CompressFormat.JPEG, 80, stream)
                         val jpegBytes = stream.toByteArray()
                         val base64 = "data:image/jpeg;base64," + Base64.encodeToString(jpegBytes, Base64.NO_WRAP)
                         val timeIso = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).format(Date())
@@ -211,7 +212,7 @@ object ScreenMirrorManager {
                                 deviceToken = deviceToken,
                                 request = ScreenFrameRequest(
                                     image_data = base64,
-                                    fps = 20.0f,
+                                    fps = 24.0f,
                                     timestamp = timeIso,
                                     width = targetWidth,
                                     height = targetHeight
@@ -224,7 +225,8 @@ object ScreenMirrorManager {
                             Log.w(TAG, "Screen frame upload failed: ${e.message}")
                         }
 
-                        delay(45L) // ~20 FPS frame pacing
+                        // Smooth 25ms delay (~30 FPS max capacity)
+                        delay(35L)
                     }
                 } finally {
                     isUploadingFrame.set(false)

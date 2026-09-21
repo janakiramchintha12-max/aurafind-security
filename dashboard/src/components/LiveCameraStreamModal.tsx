@@ -62,7 +62,8 @@ export const LiveCameraStreamModal: React.FC<LiveCameraStreamModalProps> = ({ de
   const [rotationDegrees, setRotationDegrees] = useState<number>(0);
   const [isMirrored, setIsMirrored] = useState<boolean>(false);
   const [enhanceFilter] = useState<boolean>(true);
-  const [streamEngine] = useState<'NATIVE_MJPEG' | 'SMOOTH_BUFFER' | 'DIRECT_LIVE'>('NATIVE_MJPEG');
+  const [streamEngine] = useState<'NATIVE_MJPEG' | 'SMOOTH_BUFFER' | 'DIRECT_LIVE'>('SMOOTH_BUFFER');
+  const bufferDelayMs = 2500; // 2.5 seconds jitter buffer for crystal clear stutter-free playback
   const [displayFps, setDisplayFps] = useState<number>(0);
   const [hasReceivedFirstFrame, setHasReceivedFirstFrame] = useState<boolean>(false);
   const [rawFrameSrc, setRawFrameSrc] = useState<string | null>(null);
@@ -172,7 +173,7 @@ export const LiveCameraStreamModal: React.FC<LiveCameraStreamModalProps> = ({ de
     };
   }, [device.id, activeTab]);
 
-  // 60 FPS render loop for canvas engine
+  // 60 FPS Jitter-Buffered Playout Render Loop (Smooth constant-frame playback with 2.5s delay)
   useEffect(() => {
     let active = true;
     const renderLoop = (now: number) => {
@@ -181,27 +182,55 @@ export const LiveCameraStreamModal: React.FC<LiveCameraStreamModalProps> = ({ de
       if (canvas && streamEngine !== 'NATIVE_MJPEG' && activeTab === 'STREAM') {
         const ctx = canvas.getContext('2d', { alpha: false });
         if (ctx) {
-          const img = latestImgRef.current;
-          if (img && img.complete && img.naturalWidth > 0) {
-            const w = img.naturalWidth; const h = img.naturalHeight;
+          const targetTime = now - bufferDelayMs;
+          const q = frameQueueRef.current;
+
+          // Remove frames older than 1.5s past playback target
+          while (q.length > 2 && q[0].timestamp < targetTime - 1500) {
+            q.shift();
+          }
+
+          let targetImg: HTMLImageElement | null = null;
+          if (q.length > 0) {
+            let bestIdx = 0;
+            let minDiff = Math.abs(q[0].timestamp - targetTime);
+            for (let i = 1; i < q.length; i++) {
+              const diff = Math.abs(q[i].timestamp - targetTime);
+              if (diff < minDiff) {
+                minDiff = diff;
+                bestIdx = i;
+              }
+            }
+            targetImg = q[bestIdx].img;
+          } else {
+            targetImg = latestImgRef.current;
+          }
+
+          if (targetImg && targetImg.complete && targetImg.naturalWidth > 0) {
+            const w = targetImg.naturalWidth;
+            const h = targetImg.naturalHeight;
             const isRot = rotationDegrees === 90 || rotationDegrees === 270;
-            const cw = isRot ? h : w; const ch = isRot ? w : h;
-            if (canvas.width !== cw || canvas.height !== ch) { canvas.width = cw; canvas.height = ch; }
+            const cw = isRot ? h : w;
+            const ch = isRot ? w : h;
+            if (canvas.width !== cw || canvas.height !== ch) {
+              canvas.width = cw;
+              canvas.height = ch;
+            }
             ctx.save();
             ctx.imageSmoothingEnabled = true;
             ctx.imageSmoothingQuality = 'high';
-            ctx.filter = enhanceFilter ? 'contrast(1.06) brightness(1.03) saturate(1.08)' : 'none';
+            ctx.filter = 'contrast(1.05) brightness(1.02) saturate(1.06)';
             ctx.translate(cw / 2, ch / 2);
             ctx.rotate((rotationDegrees * Math.PI) / 180);
             if (isMirrored) ctx.scale(-1, 1);
-            ctx.drawImage(img, -w / 2, -h / 2, w, h);
+            ctx.drawImage(targetImg, -w / 2, -h / 2, w, h);
             ctx.restore();
           }
         }
       }
       fpsCounterRef.current.frames++;
       if (now - fpsCounterRef.current.lastTime >= 500) {
-        setDisplayFps(Math.max(0, Math.min(120, Math.round((fpsCounterRef.current.frames * 1000) / (now - fpsCounterRef.current.lastTime)))));
+        setDisplayFps(Math.max(0, Math.min(60, Math.round((fpsCounterRef.current.frames * 1000) / (now - fpsCounterRef.current.lastTime)))));
         fpsCounterRef.current.frames = 0;
         fpsCounterRef.current.lastTime = now;
       }
@@ -209,7 +238,7 @@ export const LiveCameraStreamModal: React.FC<LiveCameraStreamModalProps> = ({ de
     };
     animFrameIdRef.current = requestAnimationFrame(renderLoop);
     return () => { active = false; if (animFrameIdRef.current) cancelAnimationFrame(animFrameIdRef.current); };
-  }, [streamEngine, rotationDegrees, isMirrored, enhanceFilter, activeTab]);
+  }, [streamEngine, rotationDegrees, isMirrored, activeTab]);
 
   const handleSwitchLens = async (targetFacing: 'FRONT' | 'BACK') => {
     if (loading) return;
@@ -391,7 +420,7 @@ export const LiveCameraStreamModal: React.FC<LiveCameraStreamModalProps> = ({ de
               {/* HUD overlays */}
               <div className="absolute top-3 left-3 bg-black/70 backdrop-blur-md px-3 py-1.5 rounded-xl text-[11px] font-mono text-cyan-300 flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse"></span>
-                <span className="font-bold">⚡ LIVE</span>
+                <span className="font-bold">⚡ HD 720p · BUFFER 2.5s</span>
               </div>
               <div className="absolute top-3 right-3 bg-black/70 backdrop-blur-md px-3 py-1.5 rounded-xl text-[11px] font-mono text-slate-200 flex items-center gap-2">
                 <Gauge className="w-3.5 h-3.5 text-cyan-400" />
