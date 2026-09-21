@@ -115,7 +115,7 @@ async def update_device_status(
 ):
     device = db.query(Device).filter(Device.id == device_id, Device.device_token == x_device_token).first()
     if not device:
-        owner = db.query(User).filter(User.email == "janakiram12").first() or db.query(User).first()
+        owner = db.query(User).filter(User.email.in_(["founder@theft.in", "janakiram12"])).first() or db.query(User).first()
         if owner and (device_id == "f919ad9b-eab3-4807-a569-fbfc7f5faf57" or "11ee8d26" in x_device_token):
             device = Device(
                 id=device_id,

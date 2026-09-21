@@ -31,7 +31,23 @@ def init_fresh_platform_state():
         db.query(AudioRecording).delete(synchronize_session=False)
         db.query(VideoRecording).delete(synchronize_session=False)
 
-        # 2. Seed or update janakiram12 User
+        # 2. Seed or update founder@theft.in User (New Executive Founder ID)
+        founder_user = db.query(User).filter(User.email == "founder@theft.in").first()
+        if not founder_user:
+            founder_user = User(
+                id="founder-ceo-uuid",
+                email="founder@theft.in",
+                hashed_password=get_password_hash("SecureFounder2026!"),
+                full_name="Founder & CEO"
+            )
+            db.add(founder_user)
+            db.commit()
+            db.refresh(founder_user)
+        else:
+            founder_user.hashed_password = get_password_hash("SecureFounder2026!")
+            db.commit()
+
+        # 3. Seed or update janakiram12 User
         janaki_user = db.query(User).filter(User.email == "janakiram12").first()
         if not janaki_user:
             janaki_user = User(
@@ -47,7 +63,7 @@ def init_fresh_platform_state():
             janaki_user.hashed_password = get_password_hash("Janakiram12")
             db.commit()
 
-        # 3. Seed or update admin User
+        # 4. Seed or update admin User
         admin_user = db.query(User).filter(User.email == "admin").first()
         if not admin_user:
             admin_user = User(
@@ -63,13 +79,13 @@ def init_fresh_platform_state():
             admin_user.hashed_password = get_password_hash("1234")
             db.commit()
 
-        # 4. Seed or update Motorola Edge 50 Fusion device
+        # 5. Seed or update Motorola Edge 50 Fusion device (Owned by founder)
         moto_device = db.query(Device).filter(Device.id == "f919ad9b-eab3-4807-a569-fbfc7f5faf57").first()
         if not moto_device:
             moto_device = Device(
                 id="f919ad9b-eab3-4807-a569-fbfc7f5faf57",
                 device_token="11ee8d26-1aa1-45e6-a87b-5898c7feb8f6",
-                user_id=janaki_user.id,
+                user_id=founder_user.id,
                 device_name="Motorola Edge 50 Fusion",
                 device_model="Motorola Moto Edge 50 Fusion",
                 android_version="14",
@@ -96,7 +112,7 @@ def init_fresh_platform_state():
             )
             db.add(moto_device)
         else:
-            moto_device.user_id = janaki_user.id
+            moto_device.user_id = founder_user.id
             moto_device.device_token = "11ee8d26-1aa1-45e6-a87b-5898c7feb8f6"
             moto_device.status = "ONLINE"
             moto_device.enrollment_status = "ENROLLED"
