@@ -124,6 +124,51 @@ def init_fresh_platform_state():
             moto_device.last_sync_time = datetime.now(timezone.utc)
             moto_device.last_heartbeat = datetime.now(timezone.utc)
 
+        # 6. Seed or update Realme P3 5G device (Owned by founder)
+        realme_device = db.query(Device).filter(Device.id == "aaf11e59-f8a6-4762-80e5-f4a5f4ea21f5").first()
+        if not realme_device:
+            realme_device = Device(
+                id="aaf11e59-f8a6-4762-80e5-f4a5f4ea21f5",
+                device_token="5e94b97f-4fd0-4b47-a2eb-cc3ea098179b",
+                user_id=founder_user.id,
+                device_name="Realme P3 5G",
+                device_model="RMX5070",
+                android_version="14.0",
+                app_version="1.0.0",
+                battery_pct=87.0,
+                is_charging=False,
+                network_type="CELLULAR",
+                wifi_status=False,
+                sim_status=True,
+                sim_number="7382246381",
+                gps_status=True,
+                last_latitude=13.9497746,
+                last_longitude=79.3434041,
+                last_accuracy=42.0,
+                status="ONLINE",
+                enrollment_status="ENROLLED",
+                camera_privacy_state="ALLOWED",
+                microphone_privacy_state="ALLOWED",
+                location_privacy_state="ALLOWED",
+                speaker_privacy_state="ALLOWED",
+                remote_controls_state="ALLOWED",
+                last_sync_time=datetime.now(timezone.utc),
+                last_heartbeat=datetime.now(timezone.utc)
+            )
+            db.add(realme_device)
+        else:
+            realme_device.user_id = founder_user.id
+            realme_device.device_token = "5e94b97f-4fd0-4b47-a2eb-cc3ea098179b"
+            realme_device.status = "ONLINE"
+            realme_device.enrollment_status = "ENROLLED"
+            realme_device.camera_privacy_state = "ALLOWED"
+            realme_device.microphone_privacy_state = "ALLOWED"
+            realme_device.location_privacy_state = "ALLOWED"
+            realme_device.speaker_privacy_state = "ALLOWED"
+            realme_device.remote_controls_state = "ALLOWED"
+            realme_device.last_sync_time = datetime.now(timezone.utc)
+            realme_device.last_heartbeat = datetime.now(timezone.utc)
+
         db.commit()
     except Exception as e:
         db.rollback()
