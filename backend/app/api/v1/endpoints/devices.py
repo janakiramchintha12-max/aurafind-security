@@ -97,11 +97,56 @@ def update_device(
     db.refresh(device)
     return device
 
+@router.delete("/wipe-all", status_code=status.HTTP_200_OK)
+def wipe_all_devices(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    from app.models.location import Location
+    from app.models.command import Command
+    from app.models.snapshot import Snapshot
+    from app.models.audio_recording import AudioRecording
+    from app.models.video_recording import VideoRecording
+    from app.models.geofence import GeofenceEvent
+    from app.models.audit import AuditLog
+
+    devices = db.query(Device).filter(Device.user_id == current_user.id).all()
+    dev_ids = [d.id for d in devices]
+
+    if dev_ids:
+        db.query(Location).filter(Location.device_id.in_(dev_ids)).delete(synchronize_session=False)
+        db.query(Command).filter(Command.device_id.in_(dev_ids)).delete(synchronize_session=False)
+        db.query(Snapshot).filter(Snapshot.device_id.in_(dev_ids)).delete(synchronize_session=False)
+        db.query(AudioRecording).filter(AudioRecording.device_id.in_(dev_ids)).delete(synchronize_session=False)
+        db.query(VideoRecording).filter(VideoRecording.device_id.in_(dev_ids)).delete(synchronize_session=False)
+        db.query(GeofenceEvent).filter(GeofenceEvent.device_id.in_(dev_ids)).delete(synchronize_session=False)
+        db.query(AuditLog).filter(AuditLog.device_id.in_(dev_ids)).delete(synchronize_session=False)
+        db.query(Device).filter(Device.id.in_(dev_ids)).delete(synchronize_session=False)
+
+    db.commit()
+    return {"message": "All devices and associated data have been permanently removed.", "deleted_count": len(dev_ids)}
+
 @router.delete("/{device_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_device(
     device: Device = Depends(verify_device_ownership),
     db: Session = Depends(get_db)
 ):
+    from app.models.location import Location
+    from app.models.command import Command
+    from app.models.snapshot import Snapshot
+    from app.models.audio_recording import AudioRecording
+    from app.models.video_recording import VideoRecording
+    from app.models.geofence import GeofenceEvent
+    from app.models.audit import AuditLog
+
+    db.query(Location).filter(Location.device_id == device.id).delete(synchronize_session=False)
+    db.query(Command).filter(Command.device_id == device.id).delete(synchronize_session=False)
+    db.query(Snapshot).filter(Snapshot.device_id == device.id).delete(synchronize_session=False)
+    db.query(AudioRecording).filter(AudioRecording.device_id == device.id).delete(synchronize_session=False)
+    db.query(VideoRecording).filter(VideoRecording.device_id == device.id).delete(synchronize_session=False)
+    db.query(GeofenceEvent).filter(GeofenceEvent.device_id == device.id).delete(synchronize_session=False)
+    db.query(AuditLog).filter(AuditLog.device_id == device.id).delete(synchronize_session=False)
+
     log_audit(db, user_id=device.user_id, device_id=device.id, action="DEVICE_REMOVED", resource=f"device:{device.id}")
     db.delete(device)
     db.commit()
@@ -115,41 +160,7 @@ async def update_device_status(
 ):
     device = db.query(Device).filter(Device.id == device_id, Device.device_token == x_device_token).first()
     if not device:
-        owner = db.query(User).filter(User.email.in_(["founder@theft.in", "janakiram12"])).first() or db.query(User).first()
-        if owner and (device_id == "f919ad9b-eab3-4807-a569-fbfc7f5faf57" or "11ee8d26" in x_device_token):
-            device = Device(
-                id=device_id,
-                device_token=x_device_token,
-                user_id=owner.id,
-                device_name="Motorola Edge 50 Fusion",
-                device_model="Motorola Moto Edge 50 Fusion",
-                android_version="14",
-                app_version="1.0.0",
-                status="ONLINE",
-                enrollment_status="ENROLLED",
-                last_heartbeat=datetime.now(timezone.utc)
-            )
-            db.add(device)
-            db.commit()
-            db.refresh(device)
-        elif owner and (device_id == "aaf11e59-f8a6-4762-80e5-f4a5f4ea21f5" or "5e94b97f" in x_device_token):
-            device = Device(
-                id=device_id,
-                device_token=x_device_token,
-                user_id=owner.id,
-                device_name="Realme P3 5G",
-                device_model="RMX5070",
-                android_version="14.0",
-                app_version="1.0.0",
-                status="ONLINE",
-                enrollment_status="ENROLLED",
-                last_heartbeat=datetime.now(timezone.utc)
-            )
-            db.add(device)
-            db.commit()
-            db.refresh(device)
-        else:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid device credentials")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid device credentials")
 
     if device.enrollment_status == "REVOKED":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Device enrollment has been revoked")

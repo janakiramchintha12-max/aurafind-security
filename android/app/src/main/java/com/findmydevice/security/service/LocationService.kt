@@ -378,7 +378,9 @@ class LocationService : Service() {
                             if (!payload.isNullOrBlank()) facing = payload
                         }
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                            startForegroundServiceNotification()
+                            startForegroundServiceNotification(
+                                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
+                            )
                         }
                         com.findmydevice.security.util.CameraStreamManager.startStreaming(
                             applicationContext, activeService, deviceId, deviceToken, facing
@@ -507,7 +509,9 @@ class LocationService : Service() {
                             facing = if (com.findmydevice.security.util.CameraStreamManager.getCurrentFacing() == "FRONT") "BACK" else "FRONT"
                         }
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                            startForegroundServiceNotification()
+                            startForegroundServiceNotification(
+                                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
+                            )
                         }
                         // 1. Switch primary live optical MJPEG/frame stream
                         com.findmydevice.security.util.CameraStreamManager.switchCamera(
