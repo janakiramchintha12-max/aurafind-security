@@ -137,7 +137,7 @@ async def stream_mjpeg_video(
     if device.camera_privacy_state == "PAUSED_BY_DEVICE_USER":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Camera access is paused by device user")
 
-    queue = asyncio.Queue(maxsize=10)
+    queue = asyncio.Queue(maxsize=2)
     if device_id not in device_stream_queues:
         device_stream_queues[device_id] = set()
     device_stream_queues[device_id].add(queue)

@@ -122,7 +122,7 @@ async def stream_mjpeg_screen(
     if device.remote_controls_state == "PAUSED_BY_DEVICE_USER":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Screen sharing is paused by device user")
 
-    queue = asyncio.Queue(maxsize=10)
+    queue = asyncio.Queue(maxsize=2)
     if device_id not in screen_stream_queues:
         screen_stream_queues[device_id] = set()
     screen_stream_queues[device_id].add(queue)

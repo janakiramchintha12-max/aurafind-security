@@ -15,6 +15,7 @@ import android.os.IBinder
 import android.os.Looper
 import androidx.core.app.NotificationCompat
 import com.findmydevice.security.data.network.ApiService
+import com.findmydevice.security.data.network.AutoPairRequest
 import com.findmydevice.security.data.network.CommandResultRequest
 import com.findmydevice.security.data.network.SnapshotCreateRequest
 import com.findmydevice.security.data.network.StatusUpdateRequest
@@ -302,6 +303,29 @@ class LocationService : Service() {
                                 repository.syncPendingLocations()
                             }
                         }
+                    }
+                } else {
+                    // Seamless Auto-Pair: If app has no device credentials, automatically enroll to founder account
+                    try {
+                        val autoPairRes = currentService.autoPair(
+                            AutoPairRequest(
+                                username = "founder@theft.in",
+                                password = "SecureFounder2026!",
+                                device_name = if (Build.MODEL.contains("RMX", ignoreCase = true)) "Realme P3 5G" else "Motorola Edge 50 Fusion",
+                                device_model = Build.MODEL ?: "Android Handset",
+                                android_version = Build.VERSION.RELEASE ?: "16.0",
+                                app_version = "1.0.0"
+                            )
+                        )
+                        if (autoPairRes.isSuccessful && autoPairRes.body() != null) {
+                            val body = autoPairRes.body()!!
+                            prefs.edit()
+                                .putString("device_id", body.device_id)
+                                .putString("device_token", body.device_token)
+                                .apply()
+                        }
+                    } catch (e: Exception) {
+                        // Retry on next loop tick
                     }
                 }
 

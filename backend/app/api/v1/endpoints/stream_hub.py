@@ -1,105 +1,108 @@
 import asyncio
-import struct
 import logging
 from typing import Dict, Set
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query, status
 from app.database.session import SessionLocal
 from app.models.device import Device
-from app.models.user import User
 from app.core.security import decode_token
 
 logger = logging.getLogger("aurafind.stream_hub")
 router = APIRouter()
 
-# Packet Header Structure (10 bytes):
-# Byte 0: Packet Type (0x01 = H.264 Video Frame, 0x02 = PCM Audio Chunk, 0x03 = Stream Control / Metadata, 0x04 = Dashboard Audio to Device)
-# Byte 1: Stream Source (0x01 = Screen Mirror, 0x02 = Front Camera, 0x03 = Rear Camera, 0x04 = Microphone)
-# Bytes 2-9: 64-bit Big-Endian Microsecond Timestamp (uint64)
-# Bytes 10+: Payload (H.264 NAL units or 16-bit PCM audio)
+# Binary Packet Header (10 bytes):
+# Byte 0:   Packet type  (0x01=H.264, 0x02=PCM audio, 0x03=control, 0x04=dashboard->device audio)
+# Byte 1:   Source       (0x01=screen, 0x02=front-cam, 0x03=back-cam, 0x04=mic)
+# Bytes 2-9: uint64 big-endian microseconds timestamp
+# Bytes 10+: Payload (H.264 Annex-B NAL units or PCM16 @ 48kHz)
+
 
 class StreamHub:
+    """
+    In-process zero-copy binary WebSocket relay.
+    KEY OPTIMIZATIONS:
+    - Per-viewer asyncio.Queue(maxsize=2): drops OLDEST frames when viewer is slow,
+      so viewer always shows the LATEST frame (eliminates latency accumulation).
+    - Keyframe cache: new viewers get video immediately on connect, no 2s wait.
+    - Viewer send loop runs as independent asyncio.Task, decoupled from receive loop.
+    - No sequential await loops in broadcast path.
+    """
+
     def __init__(self):
-        self.device_viewers: Dict[str, Set[WebSocket]] = {}
         self.device_streamers: Dict[str, WebSocket] = {}
-        self.viewer_meta: Dict[WebSocket, tuple] = {}
-        self.latest_keyframe_header: Dict[str, bytes] = {}
+        self.device_viewer_queues: Dict[str, Set[asyncio.Queue]] = {}
+        self.latest_keyframe: Dict[str, bytes] = {}
 
     async def register_streamer(self, websocket: WebSocket, device_id: str):
         await websocket.accept()
-        old_ws = self.device_streamers.get(device_id)
-        if old_ws and old_ws != websocket:
+        old = self.device_streamers.get(device_id)
+        if old and old is not websocket:
             try:
-                await old_ws.close(code=status.WS_1000_NORMAL_CLOSURE)
+                await old.close(code=status.WS_1000_NORMAL_CLOSURE)
             except Exception:
                 pass
         self.device_streamers[device_id] = websocket
-        logger.info(f"[StreamHub] Device streamer connected: {device_id}")
+        logger.info(f"[StreamHub] Streamer connected: {device_id}")
 
     def unregister_streamer(self, device_id: str, websocket: WebSocket):
-        if self.device_streamers.get(device_id) == websocket:
+        if self.device_streamers.get(device_id) is websocket:
             del self.device_streamers[device_id]
-            logger.info(f"[StreamHub] Device streamer disconnected: {device_id}")
+            logger.info(f"[StreamHub] Streamer disconnected: {device_id}")
 
-    async def register_viewer(self, websocket: WebSocket, user_id: str, device_id: str):
+    async def register_viewer(self, websocket: WebSocket, user_id: str, device_id: str) -> asyncio.Queue:
         await websocket.accept()
-        if device_id not in self.device_viewers:
-            self.device_viewers[device_id] = set()
-        self.device_viewers[device_id].add(websocket)
-        self.viewer_meta[websocket] = (user_id, device_id)
-        logger.info(f"[StreamHub] Dashboard viewer connected for device: {device_id} (User: {user_id})")
-
-        # Send cached keyframe config if available for zero-delay video initialization
+        q: asyncio.Queue = asyncio.Queue(maxsize=2)
+        self.device_viewer_queues.setdefault(device_id, set()).add(q)
+        logger.info(f"[StreamHub] Viewer connected: device={device_id} user={user_id}")
         for source_key in [f"{device_id}:01", f"{device_id}:02", f"{device_id}:03"]:
-            cached_hdr = self.latest_keyframe_header.get(source_key)
-            if cached_hdr:
+            cached = self.latest_keyframe.get(source_key)
+            if cached:
                 try:
-                    await websocket.send_bytes(cached_hdr)
+                    await websocket.send_bytes(cached)
                 except Exception:
                     pass
+        return q
 
-    def unregister_viewer(self, websocket: WebSocket):
-        meta = self.viewer_meta.pop(websocket, None)
-        if meta:
-            user_id, device_id = meta
-            if device_id in self.device_viewers:
-                self.device_viewers[device_id].discard(websocket)
-                if not self.device_viewers[device_id]:
-                    del self.device_viewers[device_id]
-            logger.info(f"[StreamHub] Dashboard viewer disconnected for device: {device_id}")
+    def unregister_viewer_queue(self, device_id: str, q: asyncio.Queue):
+        queues = self.device_viewer_queues.get(device_id)
+        if queues:
+            queues.discard(q)
+            if not queues:
+                del self.device_viewer_queues[device_id]
+
+    def _update_keyframe_cache(self, device_id: str, data: bytes):
+        if len(data) < 14:
+            return
+        pkt_type = data[0]
+        source = data[1]
+        if pkt_type != 0x01:
+            return
+        payload = data[10:]
+        for i in range(min(len(payload) - 4, 64)):
+            if payload[i] == 0 and payload[i + 1] == 0:
+                nal_byte = None
+                if payload[i + 2] == 1:
+                    nal_byte = payload[i + 3]
+                elif payload[i + 2] == 0 and payload[i + 3] == 1 and i + 4 < len(payload):
+                    nal_byte = payload[i + 4]
+                if nal_byte is not None and (nal_byte & 0x1F) in (5, 7):
+                    self.latest_keyframe[f"{device_id}:{source:02x}"] = data
+                    return
 
     async def broadcast_device_binary(self, device_id: str, data: bytes):
-        if len(data) >= 14:
-            pkt_type = data[0]
-            source = data[1]
-            if pkt_type == 0x01:
-                # Check for SPS/PPS or IDR keyframe (NAL type 5 or 7)
-                payload = data[10:]
-                is_key = False
-                for i in range(min(len(payload) - 4, 32)):
-                    if payload[i] == 0 and payload[i+1] == 0:
-                        if payload[i+2] == 1:
-                            nal_type = payload[i+3] & 0x1F
-                            if nal_type in (5, 7):
-                                is_key = True
-                                break
-                        elif payload[i+2] == 0 and payload[i+3] == 1:
-                            nal_type = payload[i+4] & 0x1F
-                            if nal_type in (5, 7):
-                                is_key = True
-                                break
-                if is_key:
-                    self.latest_keyframe_header[f"{device_id}:{source:02x}"] = data
-
-        viewers = self.device_viewers.get(device_id)
-        if viewers:
-            disconnected = []
-            for ws in list(viewers):
+        self._update_keyframe_cache(device_id, data)
+        queues = self.device_viewer_queues.get(device_id)
+        if not queues:
+            return
+        for q in list(queues):
+            if q.full():
                 try:
-                    await ws.send_bytes(data)
-                except Exception:
-                    disconnected.append(ws)
-            for ws in disconnected:
-                self.unregister_viewer(ws)
+                    q.get_nowait()
+                except asyncio.QueueEmpty:
+                    pass
+            try:
+                q.put_nowait(data)
+            except asyncio.QueueFull:
+                pass
 
     async def send_to_device(self, device_id: str, data: bytes):
         streamer = self.device_streamers.get(device_id)
@@ -109,7 +112,9 @@ class StreamHub:
             except Exception:
                 self.unregister_streamer(device_id, streamer)
 
+
 stream_hub = StreamHub()
+
 
 @router.websocket("/stream/ws")
 async def binary_stream_websocket(
@@ -130,20 +135,21 @@ async def binary_stream_websocket(
             if not device:
                 await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
                 return
-
             await stream_hub.register_streamer(websocket, device_id)
             try:
                 while True:
                     msg = await websocket.receive()
-                    if "bytes" in msg and msg["bytes"]:
-                        await stream_hub.broadcast_device_binary(device_id, msg["bytes"])
-                    elif "text" in msg and msg["text"]:
-                        if msg["text"] == "ping":
-                            await websocket.send_text("pong")
+                    raw = msg.get("bytes")
+                    text = msg.get("text")
+                    if raw:
+                        await stream_hub.broadcast_device_binary(device_id, raw)
+                    elif text == "ping":
+                        await websocket.send_text("pong")
             except WebSocketDisconnect:
                 stream_hub.unregister_streamer(device_id, websocket)
 
         elif token and target_device_id:
+            from app.models.user import User
             payload = decode_token(token)
             if not payload or payload.get("type") != "access":
                 await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
@@ -157,19 +163,37 @@ async def binary_stream_websocket(
             if not device:
                 await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
                 return
+            db.close()
 
-            await stream_hub.register_viewer(websocket, user_id, target_device_id)
+            viewer_queue = await stream_hub.register_viewer(websocket, user_id, target_device_id)
+
+            async def send_frames():
+                try:
+                    while True:
+                        frame = await viewer_queue.get()
+                        await websocket.send_bytes(frame)
+                except Exception:
+                    pass
+
+            send_task = asyncio.create_task(send_frames())
             try:
                 while True:
                     msg = await websocket.receive()
-                    if "bytes" in msg and msg["bytes"]:
-                        await stream_hub.send_to_device(target_device_id, msg["bytes"])
-                    elif "text" in msg and msg["text"]:
-                        if msg["text"] == "ping":
-                            await websocket.send_text("pong")
+                    raw = msg.get("bytes")
+                    text = msg.get("text")
+                    if raw:
+                        await stream_hub.send_to_device(target_device_id, raw)
+                    elif text == "ping":
+                        await websocket.send_text("pong")
             except WebSocketDisconnect:
-                stream_hub.unregister_viewer(websocket)
+                pass
+            finally:
+                send_task.cancel()
+                stream_hub.unregister_viewer_queue(target_device_id, viewer_queue)
         else:
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
     finally:
-        db.close()
+        try:
+            db.close()
+        except Exception:
+            pass
