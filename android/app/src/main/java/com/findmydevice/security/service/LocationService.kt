@@ -36,8 +36,8 @@ class LocationService : Service() {
 
     companion object {
         private const val TAG = "LocationService"
-        const val PERMANENT_DEVICE_ID = "f2937e98-ba61-4ffb-8653-101d88015589"
-        const val PERMANENT_DEVICE_TOKEN = "3e84ecdb-cc16-451c-bd1a-7cca4d3ec34d"
+        const val PERMANENT_DEVICE_ID = "fbda52ab-478c-416f-876a-6558e77c7726"
+        const val PERMANENT_DEVICE_TOKEN = "2f7d61ab-2030-48f7-926b-7200db7647db"
     }
 
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())

