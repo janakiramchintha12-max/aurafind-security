@@ -47,7 +47,7 @@ export const HardwareStreamPlayer: React.FC<HardwareStreamPlayerProps> = ({
     if (!audioCtxRef.current) {
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
       if (AudioCtx) {
-        audioCtxRef.current = new AudioCtx({ sampleRate: 16000 });
+        audioCtxRef.current = new AudioCtx({ sampleRate: 48000 });
         nextAudioPlayTimeRef.current = audioCtxRef.current.currentTime;
       }
     } else if (audioCtxRef.current.state === 'suspended') {
@@ -166,7 +166,7 @@ export const HardwareStreamPlayer: React.FC<HardwareStreamPlayerProps> = ({
         float32[i] = int16[i] / 32768.0;
       }
 
-      const audioBuffer = ctx.createBuffer(1, float32.length, 16000);
+      const audioBuffer = ctx.createBuffer(1, float32.length, 48000);
       audioBuffer.getChannelData(0).set(float32);
 
       const source = ctx.createBufferSource();
@@ -174,7 +174,8 @@ export const HardwareStreamPlayer: React.FC<HardwareStreamPlayerProps> = ({
       source.connect(ctx.destination);
 
       const now = ctx.currentTime;
-      if (nextAudioPlayTimeRef.current < now) {
+      // Clamp playback head: if behind or accumulated drift exceeds 80ms, re-sync to now
+      if (nextAudioPlayTimeRef.current < now || nextAudioPlayTimeRef.current > now + 0.08) {
         nextAudioPlayTimeRef.current = now;
       }
       source.start(nextAudioPlayTimeRef.current);

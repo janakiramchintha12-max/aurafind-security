@@ -31,6 +31,8 @@ import android.content.SharedPreferences
 import android.util.Log
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
+import okhttp3.*
+import java.util.concurrent.TimeUnit
 
 class LocationService : Service() {
 
@@ -279,6 +281,62 @@ class LocationService : Service() {
         }
     }
 
+    private var controlWebSocket: WebSocket? = null
+    private var controlHttpClient: OkHttpClient? = null
+    private var isControlWsConnected = false
+
+    private fun ensureControlWebSocket(deviceId: String, deviceToken: String, service: ApiService) {
+        if (isControlWsConnected && controlWebSocket != null) return
+        try {
+            val wsUrl = "${CLOUD_BASE_URL.replace("http://", "ws://").replace("https://", "wss://")}api/v1/ws?device_id=$deviceId&device_token=$deviceToken"
+            if (controlHttpClient == null) {
+                controlHttpClient = OkHttpClient.Builder()
+                    .connectTimeout(4, TimeUnit.SECONDS)
+                    .readTimeout(0, TimeUnit.MILLISECONDS)
+                    .writeTimeout(4, TimeUnit.SECONDS)
+                    .pingInterval(8, TimeUnit.SECONDS)
+                    .retryOnConnectionFailure(true)
+                    .build()
+            }
+            val req = Request.Builder().url(wsUrl).build()
+            controlWebSocket = controlHttpClient?.newWebSocket(req, object : WebSocketListener() {
+                override fun onOpen(webSocket: WebSocket, response: Response) {
+                    isControlWsConnected = true
+                    Log.i(TAG, "[ControlWS] Real-time sub-50ms push channel connected.")
+                }
+
+                override fun onMessage(webSocket: WebSocket, text: String) {
+                    try {
+                        val json = org.json.JSONObject(text)
+                        if (json.optString("event") == "REMOTE_COMMAND") {
+                            val cmdId = json.getString("command_id")
+                            val cmdType = json.getString("command_type")
+                            val payload = if (json.has("payload") && !json.isNull("payload")) json.getString("payload") else null
+                            Log.i(TAG, "[ControlWS] Instant push received: $cmdType")
+                            serviceScope.launch {
+                                executeRemoteCommand(service, deviceId, deviceToken, cmdId, cmdType, payload)
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "[ControlWS] Push parse error: ${e.message}")
+                    }
+                }
+
+                override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                    isControlWsConnected = false
+                    controlWebSocket = null
+                }
+
+                override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                    isControlWsConnected = false
+                    controlWebSocket = null
+                }
+            })
+        } catch (e: Exception) {
+            Log.e(TAG, "[ControlWS] Connect error: ${e.message}")
+        }
+    }
+
     private fun startHeartbeatAndCommandPollLoop() {
         serviceScope.launch {
             var statusSyncCounter = 0
@@ -299,7 +357,10 @@ class LocationService : Service() {
                         .apply()
                 }
 
-                // 1. Check Pending Commands every 1.5 seconds
+                // Maintain real-time WebSocket connection for instant sub-50ms command push
+                ensureControlWebSocket(devId, devTok, currentService)
+
+                // 1. Check Pending Commands every 1.5 seconds (resilient polling fallback)
                 try {
                     val commandsRes = currentService.getPendingCommands(devId, devTok)
                     if (commandsRes.isSuccessful) {
@@ -838,6 +899,8 @@ class LocationService : Service() {
         serviceScope.cancel()
         isServiceRunning = false
         releaseLostModeWakeLock()
+        try { controlWebSocket?.close(1000, "Service stopped") } catch (_: Exception) {}
+        controlWebSocket = null
         try { unregisterReceiver(screenStateReceiver) } catch (e: Exception) {}
     }
 
