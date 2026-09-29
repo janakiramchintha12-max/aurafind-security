@@ -38,6 +38,7 @@ class LocationService : Service() {
     private lateinit var repository: LocationRepository
     private lateinit var offlineCoordinator: OfflineSafetyCoordinator
     private var wakeLock: android.os.PowerManager.WakeLock? = null
+    private var lostModeWakeLock: android.os.PowerManager.WakeLock? = null
 
     // Permanent 24/7 Global Cloud Host
     private val CLOUD_BASE_URL = "https://aurafind-security.onrender.com/"
@@ -49,11 +50,12 @@ class LocationService : Service() {
     private var lastLat = 13.94978
     private var lastLng = 79.34332
 
-    // Re-surface LostModeOverlayActivity when screen wakes while lost mode is active
-    private val screenOnReceiver = object : BroadcastReceiver() {
+    // Re-surface LostModeOverlayActivity when screen wakes or turns off while lost mode is active
+    private val screenStateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             val prefs = applicationContext.getSharedPreferences("aurafind_prefs", Context.MODE_PRIVATE)
             if (prefs.getBoolean("is_lost_mode", false)) {
+                acquireLostModeWakeLock()
                 val lostPhone = prefs.getString("lost_mode_phone", "") ?: ""
                 val lostMsg   = prefs.getString("lost_mode_msg",   "This device is reported LOST. Please contact the owner.") ?: ""
                 val relaunch  = Intent(applicationContext, LostModeOverlayActivity::class.java).apply {
@@ -78,12 +80,13 @@ class LocationService : Service() {
 
         setupLocationCallback()
 
-        // Register SCREEN_ON receiver so lost mode overlay re-surfaces after power-button press
+        // Register SCREEN_ON / SCREEN_OFF receiver so lost mode overlay re-surfaces immediately
         val filter = IntentFilter().apply {
             addAction(Intent.ACTION_SCREEN_ON)
+            addAction(Intent.ACTION_SCREEN_OFF)
             addAction(Intent.ACTION_USER_PRESENT)
         }
-        registerReceiver(screenOnReceiver, filter)
+        registerReceiver(screenStateReceiver, filter)
     }
 
     private fun acquireWakeLock() {
@@ -95,6 +98,34 @@ class LocationService : Service() {
         } catch (e: Exception) {
             e.printStackTrace()
         }
+    }
+
+    private fun acquireLostModeWakeLock() {
+        try {
+            if (lostModeWakeLock == null || !lostModeWakeLock!!.isHeld) {
+                val powerManager = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+                @Suppress("DEPRECATION")
+                lostModeWakeLock = powerManager.newWakeLock(
+                    android.os.PowerManager.SCREEN_BRIGHT_WAKE_LOCK or
+                    android.os.PowerManager.ACQUIRE_CAUSES_WAKEUP or
+                    android.os.PowerManager.ON_AFTER_RELEASE,
+                    "AuraFind::LostModePermanentScreenLock"
+                ).apply {
+                    acquire(24 * 60 * 60 * 1000L)
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    private fun releaseLostModeWakeLock() {
+        try {
+            if (lostModeWakeLock?.isHeld == true) {
+                lostModeWakeLock?.release()
+            }
+            lostModeWakeLock = null
+        } catch (e: Exception) {}
     }
 
     private fun setupActiveApiService(): ApiService {
@@ -597,7 +628,7 @@ class LocationService : Service() {
                             emergencyNum = NetworkUtils.getSimPhoneNumber(applicationContext)
                         }
 
-                        // ── Persist lost-mode state so SCREEN_ON receiver and overlay can read it ──
+                        // ── Persist lost-mode state so receivers and overlay can read it ──
                         val prefs = applicationContext.getSharedPreferences("aurafind_prefs", Context.MODE_PRIVATE)
                         prefs.edit()
                             .putBoolean("is_lost_mode",    true)
@@ -606,8 +637,10 @@ class LocationService : Service() {
                             .putString("lost_mode_msg",    lostMsg)
                             .apply()
 
+                        acquireLostModeWakeLock()
+
                         val lostIntent = Intent(applicationContext, LostModeOverlayActivity::class.java).apply {
-                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
                             putExtra("EMERGENCY_NUMBER", emergencyNum)
                             putExtra("LOST_MSG", lostMsg)
                         }
@@ -635,7 +668,7 @@ class LocationService : Service() {
                         resultText = "Lost Mode overlay activated displaying $emergencyNum"
                     }
                 }
-                "DISABLE_LOST_MODE" -> {
+                "DISABLE_LOST_MODE", "STOP_LOST_MODE", "UNLOCK_DEVICE" -> {
                     val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
                     notificationManager.cancel(9999)
                     // Clear the lost-mode flag from SharedPreferences
@@ -646,7 +679,9 @@ class LocationService : Service() {
                         .remove("lost_mode_key")
                         .remove("lost_mode_msg")
                         .apply()
-                    resultText = "Lost Mode deactivated"
+                    releaseLostModeWakeLock()
+                    sendBroadcast(Intent(LostModeOverlayActivity.ACTION_DISMISS_LOST_MODE))
+                    resultText = "Lost Mode deactivated, device unlocked"
                 }
 
                 "HIGH_ACCURACY_MODE" -> {
@@ -778,7 +813,8 @@ class LocationService : Service() {
         offlineCoordinator.stop()
         serviceScope.cancel()
         isServiceRunning = false
-        try { unregisterReceiver(screenOnReceiver) } catch (e: Exception) {}
+        releaseLostModeWakeLock()
+        try { unregisterReceiver(screenStateReceiver) } catch (e: Exception) {}
     }
 
 

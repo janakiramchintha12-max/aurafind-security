@@ -68,8 +68,12 @@
             android:name=".ui.LostModeOverlayActivity"
             android:exported="false"
             android:showOnLockScreen="true"
+            android:showWhenLocked="true"
             android:turnScreenOn="true"
-            android:theme="@android:style/Theme.Material.NoActionBar" />
+            android:excludeFromRecents="true"
+            android:launchMode="singleInstance"
+            android:screenOrientation="portrait"
+            android:theme="@android:style/Theme.Material.NoActionBar.Fullscreen" />
 
         <activity
             android:name=".ui.FakeShutdownOverlayActivity"
