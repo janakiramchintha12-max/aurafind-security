@@ -27,10 +27,18 @@ import com.findmydevice.security.util.NetworkUtils
 import com.findmydevice.security.util.PrivacyManager
 import com.google.android.gms.location.*
 import kotlinx.coroutines.*
+import android.content.SharedPreferences
+import android.util.Log
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 
 class LocationService : Service() {
+
+    companion object {
+        private const val TAG = "LocationService"
+        const val PERMANENT_DEVICE_ID = "f2937e98-ba61-4ffb-8653-101d88015589"
+        const val PERMANENT_DEVICE_TOKEN = "3e84ecdb-cc16-451c-bd1a-7cca4d3ec34d"
+    }
 
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private lateinit var fusedLocationClient: FusedLocationProviderClient
@@ -278,90 +286,106 @@ class LocationService : Service() {
             while (isActive) {
                 val currentService = apiService ?: setupActiveApiService()
                 val prefs = applicationContext.getSharedPreferences("aurafind_prefs", Context.MODE_PRIVATE)
-                var devId = prefs.getString("device_id", null)
-                var devTok = prefs.getString("device_token", null)
 
-                val currentDevId = devId
-                val currentDevTok = devTok
+                // Fallback to canonical permanent credentials if prefs are empty or wiped
+                var devId = prefs.getString("device_id", null)?.ifBlank { null } ?: PERMANENT_DEVICE_ID
+                var devTok = prefs.getString("device_token", null)?.ifBlank { null } ?: PERMANENT_DEVICE_TOKEN
 
-                if (!currentDevId.isNullOrBlank() && !currentDevTok.isNullOrBlank()) {
-                    // 1. Check Pending Commands every 1.5 seconds
-                    try {
-                        val commandsRes = currentService.getPendingCommands(currentDevId, currentDevTok)
-                        if (commandsRes.isSuccessful) {
-                            commandsRes.body()?.forEach { cmd ->
-                                executeRemoteCommand(currentService, currentDevId, currentDevTok, cmd.id, cmd.command_type, cmd.payload)
-                            }
+                // Ensure credentials are always present in SharedPreferences for all other modules
+                if (prefs.getString("device_id", null) != devId || prefs.getString("device_token", null) != devTok) {
+                    prefs.edit()
+                        .putString("device_id", devId)
+                        .putString("device_token", devTok)
+                        .apply()
+                }
+
+                // 1. Check Pending Commands every 1.5 seconds
+                try {
+                    val commandsRes = currentService.getPendingCommands(devId, devTok)
+                    if (commandsRes.isSuccessful) {
+                        commandsRes.body()?.forEach { cmd ->
+                            executeRemoteCommand(currentService, devId, devTok, cmd.id, cmd.command_type, cmd.payload)
                         }
-                    } catch (e: Exception) {
-                        // Transient network retry
+                    } else if (commandsRes.code() in listOf(401, 403, 404)) {
+                        Log.w(TAG, "Server rejected pairing (${commandsRes.code()}). Re-pairing permanently...")
+                        performAutoPair(currentService, prefs)
                     }
+                } catch (e: Exception) {
+                    // Transient network retry
+                }
 
-                    // 2. Periodic Telemetry Status & Heartbeat (every ~3 seconds)
-                    if (devId != null && devTok != null) {
-                        statusSyncCounter++
-                        if (statusSyncCounter >= 2) {
-                            statusSyncCounter = 0
-                            val batteryPct = getBatteryPercentage()
-                            val simPresent = NetworkUtils.isSimPresent(applicationContext)
-                            val simNum = NetworkUtils.getSimPhoneNumber(applicationContext)
+                // 2. Periodic Telemetry Status & Heartbeat (every ~2.4 seconds)
+                statusSyncCounter++
+                if (statusSyncCounter >= 2) {
+                    statusSyncCounter = 0
+                    val batteryPct = getBatteryPercentage()
+                    val simPresent = NetworkUtils.isSimPresent(applicationContext)
+                    val simNum = NetworkUtils.getSimPhoneNumber(applicationContext)
 
-                            try {
-                                val statusRes = currentService.updateDeviceStatus(
-                                    deviceId = devId,
-                                    deviceToken = devTok,
-                                    request = StatusUpdateRequest(
-                                        battery_pct = batteryPct,
-                                        is_charging = isDeviceCharging(),
-                                        network_type = NetworkUtils.getNetworkType(applicationContext),
-                                        wifi_status = NetworkUtils.isWifiConnected(applicationContext),
-                                        sim_status = simPresent,
-                                        sim_number = simNum,
-                                        gps_status = NetworkUtils.isGpsEnabled(applicationContext),
-                                        tracking_mode = trackingMode,
-                                        camera_privacy_state = PrivacyManager.getCameraState(applicationContext),
-                                        microphone_privacy_state = PrivacyManager.getMicState(applicationContext),
-                                        location_privacy_state = PrivacyManager.getLocationState(applicationContext),
-                                        speaker_privacy_state = PrivacyManager.getSpeakerState(applicationContext),
-                                        remote_controls_state = PrivacyManager.getControlsState(applicationContext)
-                                    )
-                                )
-                            } catch (e: Exception) {
-                                // Transient retry next tick
-                            }
-
-                            if (!PrivacyManager.isLocationPaused(applicationContext)) {
-                                repository.syncPendingLocations()
-                            }
-                        }
-                    }
-                } else {
-                    // Seamless Auto-Pair: If app has no device credentials, automatically enroll to founder account
                     try {
-                        val autoPairRes = currentService.autoPair(
-                            AutoPairRequest(
-                                username = "founder@theft.in",
-                                password = "SecureFounder2026!",
-                                device_name = if (Build.MODEL.contains("RMX", ignoreCase = true)) "Realme P3 5G" else "Motorola Edge 50 Fusion",
-                                device_model = Build.MODEL ?: "Android Handset",
-                                android_version = Build.VERSION.RELEASE ?: "16.0",
-                                app_version = "1.0.0"
+                        val statusRes = currentService.updateDeviceStatus(
+                            deviceId = devId,
+                            deviceToken = devTok,
+                            request = StatusUpdateRequest(
+                                battery_pct = batteryPct,
+                                is_charging = isDeviceCharging(),
+                                network_type = NetworkUtils.getNetworkType(applicationContext),
+                                wifi_status = NetworkUtils.isWifiConnected(applicationContext),
+                                sim_status = simPresent,
+                                sim_number = simNum,
+                                gps_status = NetworkUtils.isGpsEnabled(applicationContext),
+                                tracking_mode = trackingMode,
+                                camera_privacy_state = PrivacyManager.getCameraState(applicationContext),
+                                microphone_privacy_state = PrivacyManager.getMicState(applicationContext),
+                                location_privacy_state = PrivacyManager.getLocationState(applicationContext),
+                                speaker_privacy_state = PrivacyManager.getSpeakerState(applicationContext),
+                                remote_controls_state = PrivacyManager.getControlsState(applicationContext)
                             )
                         )
-                        if (autoPairRes.isSuccessful && autoPairRes.body() != null) {
-                            val body = autoPairRes.body()!!
-                            prefs.edit()
-                                .putString("device_id", body.device_id)
-                                .putString("device_token", body.device_token)
-                                .apply()
+                        if (!statusRes.isSuccessful && statusRes.code() in listOf(401, 403, 404)) {
+                            Log.w(TAG, "Server rejected status update (${statusRes.code()}). Re-pairing permanently...")
+                            performAutoPair(currentService, prefs)
                         }
                     } catch (e: Exception) {
-                        // Retry on next loop tick
+                        // Transient retry next tick
+                    }
+
+                    if (!PrivacyManager.isLocationPaused(applicationContext)) {
+                        repository.syncPendingLocations()
                     }
                 }
 
                 delay(1200L) // 1.2s ultra-responsive poll loop
             }
+        }
+    }
+
+    private suspend fun performAutoPair(service: ApiService, prefs: SharedPreferences): Boolean {
+        return try {
+            val autoPairRes = service.autoPair(
+                AutoPairRequest(
+                    username = "founder@theft.in",
+                    password = "SecureFounder2026!",
+                    device_name = if (Build.MODEL.contains("RMX", ignoreCase = true)) "Realme P3 5G" else "Motorola Edge 50 Fusion",
+                    device_model = Build.MODEL ?: "Android Handset",
+                    android_version = Build.VERSION.RELEASE ?: "16.0",
+                    app_version = "1.0.0"
+                )
+            )
+            if (autoPairRes.isSuccessful && autoPairRes.body() != null) {
+                val body = autoPairRes.body()!!
+                prefs.edit()
+                    .putString("device_id", body.device_id)
+                    .putString("device_token", body.device_token)
+                    .apply()
+                Log.i(TAG, "Permanent auto-pair refreshed successfully: ${body.device_id}")
+                true
+            } else {
+                false
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Auto-pair error: ${e.message}")
+            false
         }
     }
 

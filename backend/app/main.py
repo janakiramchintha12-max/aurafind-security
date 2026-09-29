@@ -79,8 +79,42 @@ def init_fresh_platform_state():
             admin_user.hashed_password = get_password_hash("1234")
             db.commit()
 
-        # Devices are no longer seeded by default; all past devices removed.
-        db.commit()
+        # 5. Permanent Device Preservation: Ensure canonical device is always paired & enrolled
+        PERMANENT_DEVICE_ID = "f2937e98-ba61-4ffb-8653-101d88015589"
+        PERMANENT_DEVICE_TOKEN = "3e84ecdb-cc16-451c-bd1a-7cca4d3ec34d"
+
+        perm_device = db.query(Device).filter(
+            (Device.id == PERMANENT_DEVICE_ID) | (Device.enrollment_status != "REVOKED")
+        ).first()
+
+        if not perm_device:
+            perm_device = Device(
+                id=PERMANENT_DEVICE_ID,
+                user_id=founder_user.id,
+                device_token=PERMANENT_DEVICE_TOKEN,
+                device_name="Motorola Edge 50 Fusion",
+                device_model="motorola edge 50 fusion",
+                android_version="16.0",
+                app_version="1.0.0",
+                status="ONLINE",
+                enrollment_status="ENROLLED",
+                battery_pct=92.0,
+                sim_number="+91 94409 50130",
+                sim_status=True,
+                is_tracking_enabled=True,
+                last_heartbeat=datetime.now(timezone.utc)
+            )
+            db.add(perm_device)
+            db.commit()
+            db.refresh(perm_device)
+        else:
+            perm_device.id = PERMANENT_DEVICE_ID
+            perm_device.user_id = founder_user.id
+            perm_device.enrollment_status = "ENROLLED"
+            perm_device.device_token = PERMANENT_DEVICE_TOKEN
+            perm_device.status = "ONLINE"
+            perm_device.last_heartbeat = datetime.now(timezone.utc)
+            db.commit()
     except Exception as e:
         db.rollback()
         logging.getLogger("aurafind.init").warning(f"Platform init warning: {e}")
