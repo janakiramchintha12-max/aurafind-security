@@ -23,10 +23,10 @@ list_res = urllib.request.urlopen(list_req)
 devices = json.loads(list_res.read())
 
 if devices:
-    PERM_ID = 'fbda52ab-478c-416f-876a-6558e77c7726'
+    PERM_ID = '67bfe7a4-2b79-4bde-958a-2dd15529ee30'
     dev = next((d for d in devices if d.get('id') == PERM_ID), devices[0])
     dev_id = dev['id']
-    dev_token = dev.get('device_token') or '2f7d61ab-2030-48f7-926b-7200db7647db'
+    dev_token = dev.get('device_token') or 'd08a8f7f-ec74-4055-90d0-8a4d302e066f'
     print(f'Using existing registered device: ID={dev_id}, Name={dev.get("device_name")}')
 else:
     print('No device on cloud. Registering new device...')

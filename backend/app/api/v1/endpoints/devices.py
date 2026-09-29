@@ -411,8 +411,8 @@ def auto_pair_device(
         )
 
     # 1. Reuse existing canonical permanent device or user device if present
-    PERMANENT_DEVICE_ID = "fbda52ab-478c-416f-876a-6558e77c7726"
-    PERMANENT_DEVICE_TOKEN = "2f7d61ab-2030-48f7-926b-7200db7647db"
+    PERMANENT_DEVICE_ID = "67bfe7a4-2b79-4bde-958a-2dd15529ee30"
+    PERMANENT_DEVICE_TOKEN = "d08a8f7f-ec74-4055-90d0-8a4d302e066f"
     device = db.query(Device).filter(
         (Device.id == PERMANENT_DEVICE_ID) | (Device.user_id == user.id)
     ).first()
