@@ -722,6 +722,9 @@ class LocationService : Service() {
                                 android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
                             )
                         }
+                        com.findmydevice.security.util.RealtimeMediaStreamer.startScreenMirrorStream(
+                            applicationContext, deviceId, deviceToken
+                        )
                         com.findmydevice.security.util.ScreenMirrorManager.startScreenMirror(
                             applicationContext, activeService, deviceId, deviceToken
                         )
@@ -729,6 +732,7 @@ class LocationService : Service() {
                     }
                 }
                 "STOP_SCREEN_MIRROR", "STOP_SCREEN_STREAM" -> {
+                    com.findmydevice.security.util.RealtimeMediaStreamer.stopScreenMirrorStream()
                     com.findmydevice.security.util.ScreenMirrorManager.stopScreenMirror()
                     startForegroundServiceNotification()
                     resultText = "Parental Screen Mirroring stopped"
