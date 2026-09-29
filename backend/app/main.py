@@ -237,7 +237,7 @@ async def websocket_endpoint(
                     data = await websocket.receive_text()
                     if data == "ping":
                         await websocket.send_text("pong")
-            except WebSocketDisconnect:
+            except (WebSocketDisconnect, Exception):
                 manager.disconnect_user(websocket, user_id)
 
         elif device_token and device_id:
@@ -256,7 +256,7 @@ async def websocket_endpoint(
                     data = await websocket.receive_text()
                     if data == "ping":
                         await websocket.send_text("pong")
-            except WebSocketDisconnect:
+            except (WebSocketDisconnect, Exception):
                 manager.disconnect_device(device_id)
         else:
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
