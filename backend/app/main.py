@@ -140,6 +140,28 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+from starlette.types import ASGIApp, Scope, Receive, Send
+
+class NormalizeDoubleSlashMiddleware:
+    def __init__(self, app: ASGIApp):
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send):
+        if scope["type"] in ("http", "websocket"):
+            path = scope.get("path", "")
+            if "//" in path:
+                while "//" in path:
+                    path = path.replace("//", "/")
+                scope["path"] = path
+            raw_path = scope.get("raw_path")
+            if raw_path and b"//" in raw_path:
+                while b"//" in raw_path:
+                    raw_path = raw_path.replace(b"//", b"/")
+                scope["raw_path"] = raw_path
+        await self.app(scope, receive, send)
+
+app.add_middleware(NormalizeDoubleSlashMiddleware)
+
 # Include API Routers
 app.include_router(auth.router, prefix=f"{settings.API_V1_STR}/auth", tags=["auth"])
 app.include_router(devices.router, prefix=f"{settings.API_V1_STR}/devices", tags=["devices"])
@@ -208,6 +230,7 @@ def download_app_apk():
     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="APK is not available")
 
 @app.websocket("/api/v1/ws")
+@app.websocket("//api/v1/ws")
 async def websocket_endpoint(
     websocket: WebSocket,
     token: str = Query(None),
@@ -262,6 +285,22 @@ async def websocket_endpoint(
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
     finally:
         db.close()
+
+@app.websocket("//api/v1/stream/ws")
+async def main_stream_ws_double_slash_alias(
+    websocket: WebSocket,
+    token: str = Query(None),
+    device_token: str = Query(None),
+    device_id: str = Query(None),
+    target_device_id: str = Query(None)
+):
+    await stream_hub.binary_stream_websocket(
+        websocket=websocket,
+        token=token,
+        device_token=device_token,
+        device_id=device_id,
+        target_device_id=target_device_id
+    )
 
 # Mount compiled React dashboard for 1-Click Cloud Deployment
 import os

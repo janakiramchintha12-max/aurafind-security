@@ -117,6 +117,7 @@ stream_hub = StreamHub()
 
 
 @router.websocket("/stream/ws")
+@router.websocket("//stream/ws")
 async def binary_stream_websocket(
     websocket: WebSocket,
     token: str = Query(None),
@@ -135,6 +136,7 @@ async def binary_stream_websocket(
             if not device:
                 await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
                 return
+            db.close()
             await stream_hub.register_streamer(websocket, device_id)
             try:
                 while True:

@@ -288,7 +288,9 @@ class LocationService : Service() {
     private fun ensureControlWebSocket(deviceId: String, deviceToken: String, service: ApiService) {
         if (isControlWsConnected && controlWebSocket != null) return
         try {
-            val wsUrl = "${CLOUD_BASE_URL.replace("http://", "ws://").replace("https://", "wss://")}api/v1/ws?device_id=$deviceId&device_token=$deviceToken"
+            val baseClean = CLOUD_BASE_URL.trimEnd('/')
+            val wsBase = baseClean.replace("http://", "ws://").replace("https://", "wss://")
+            val wsUrl = "$wsBase/api/v1/ws?device_id=$deviceId&device_token=$deviceToken"
             if (controlHttpClient == null) {
                 controlHttpClient = OkHttpClient.Builder()
                     .connectTimeout(4, TimeUnit.SECONDS)

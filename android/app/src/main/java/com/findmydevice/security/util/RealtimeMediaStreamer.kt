@@ -102,9 +102,9 @@ object RealtimeMediaStreamer {
 
     private fun ensureWebSocketConnected(deviceId: String, deviceToken: String) {
         if (isWsConnected.get() && webSocket != null) return
-        val wsUrl = "${NetworkUtils.BASE_URL
-            .replace("http://", "ws://")
-            .replace("https://", "wss://")}api/v1/stream/ws?device_id=$deviceId&device_token=$deviceToken"
+        val baseClean = NetworkUtils.BASE_URL.trimEnd('/')
+        val wsBase = baseClean.replace("http://", "ws://").replace("https://", "wss://")
+        val wsUrl = "$wsBase/api/v1/stream/ws?device_id=$deviceId&device_token=$deviceToken"
         if (okHttpClient == null) {
             okHttpClient = OkHttpClient.Builder()
                 .connectTimeout(4, TimeUnit.SECONDS)

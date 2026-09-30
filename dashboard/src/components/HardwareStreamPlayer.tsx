@@ -238,12 +238,12 @@ export const HardwareStreamPlayer: React.FC<HardwareStreamPlayerProps> = ({
     });
 
     // Ingest Binary Stream Hub WebSocket
-    const token = localStorage.getItem('token') || '';
+    const token = localStorage.getItem('token') || localStorage.getItem('access_token') || '';
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = window.location.host;
     const isLocal = host.includes('localhost') || host.includes('127.0.0.1');
     const wsBase = isLocal ? `${protocol}//${host}` : 'wss://aurafind-security.onrender.com';
-    const wsUrl = `${wsBase}/api/v1/stream/ws?token=${token}&target_device_id=${deviceId}`;
+    const wsUrl = `${wsBase}/api/v1/stream/ws?token=${encodeURIComponent(token)}&target_device_id=${deviceId}`;
 
     let ws: WebSocket | null = null;
     try {
@@ -432,7 +432,7 @@ export const HardwareStreamPlayer: React.FC<HardwareStreamPlayerProps> = ({
     };
   }, [deviceId, streamSource, initVideoDecoder, drawImageToCanvas, playPcmChunk, onStatsChange, hasReceivedFrame]);
 
-  const token = localStorage.getItem('token') || '';
+  const token = localStorage.getItem('token') || localStorage.getItem('access_token') || '';
   const mjpegFallbackUrl = streamSource === 'SCREEN' 
     ? `/api/v1/devices/${deviceId}/screen/mjpeg?token=${encodeURIComponent(token)}&t=${Date.now()}`
     : `/api/v1/devices/${deviceId}/camera/mjpeg?token=${encodeURIComponent(token)}&t=${Date.now()}`;
