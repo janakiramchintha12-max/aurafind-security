@@ -17,6 +17,7 @@ export const VoiceCallModal: React.FC<VoiceCallModalProps> = ({ device, onClose 
   const audioContextRef = useRef<AudioContext | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const processorRef = useRef<ScriptProcessorNode | null>(null);
+  const nextAudioPlayTimeRef = useRef<number>(0);
 
   useEffect(() => {
     // 1. Dispatch START_VOICE_CALL command to the device
@@ -119,7 +120,14 @@ export const VoiceCallModal: React.FC<VoiceCallModalProps> = ({ device, onClose 
       const source = audioContext.createBufferSource();
       source.buffer = buffer;
       source.connect(audioContext.destination);
-      source.start();
+
+      const now = audioContext.currentTime;
+      // Strict drift correction rule: if audio buffer timing slips by more than 80ms, instantly reset play head to live-realtime
+      if (nextAudioPlayTimeRef.current < now || nextAudioPlayTimeRef.current > now + 0.08) {
+        nextAudioPlayTimeRef.current = now;
+      }
+      source.start(nextAudioPlayTimeRef.current);
+      nextAudioPlayTimeRef.current += buffer.duration;
     } catch (e) {
       console.error('Error playing audio chunk', e);
     }

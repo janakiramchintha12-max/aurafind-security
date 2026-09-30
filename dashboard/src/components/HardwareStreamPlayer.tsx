@@ -43,6 +43,8 @@ export const HardwareStreamPlayer: React.FC<HardwareStreamPlayerProps> = ({
   const byteCountRef = useRef<number>(0);
   const lastMetricTimeRef = useRef<number>(performance.now());
   const lastFrameTimeRef = useRef<number>(performance.now());
+  const pendingFrameRef = useRef<{ source: any; isVideoFrame: boolean } | null>(null);
+  const rafIdRef = useRef<number | null>(null);
 
   // Initialize Web Audio Context for low-latency PCM playback
   const initAudioContext = useCallback(() => {
@@ -63,61 +65,24 @@ export const HardwareStreamPlayer: React.FC<HardwareStreamPlayerProps> = ({
     }
   }, [enableAudio, initAudioContext]);
 
-  // Direct 2D Canvas Image Drawer
-  const drawImageToCanvas = useCallback((img: HTMLImageElement | ImageBitmap) => {
+  // RAF-Driven Canvas Frame Renderer (Eliminates UI thread lag and frame drops at 30/60 FPS)
+  const renderPendingFrame = useCallback(() => {
+    rafIdRef.current = null;
+    const pending = pendingFrameRef.current;
+    if (!pending) return;
+    pendingFrameRef.current = null;
+
     const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const w = (img as HTMLImageElement).naturalWidth || (img as ImageBitmap).width || 540;
-    const h = (img as HTMLImageElement).naturalHeight || (img as ImageBitmap).height || 960;
-
-    const isRotated90 = rotationDegrees === 90 || rotationDegrees === 270;
-    const targetW = isRotated90 ? h : w;
-    const targetH = isRotated90 ? w : h;
-
-    if (canvas.width !== targetW || canvas.height !== targetH) {
-      canvas.width = targetW;
-      canvas.height = targetH;
-    }
-
-    const ctx = canvas.getContext('2d', { alpha: false });
-    if (ctx) {
-      ctx.save();
-      ctx.imageSmoothingEnabled = true;
-      ctx.imageSmoothingQuality = 'high';
-
-      ctx.translate(canvas.width / 2, canvas.height / 2);
-      ctx.rotate((rotationDegrees * Math.PI) / 180);
-      if (isMirrored) {
-        ctx.scale(-1, 1);
-      }
-
-      ctx.drawImage(img as any, -w / 2, -h / 2, w, h);
-      ctx.restore();
-    }
-
-    frameCountRef.current++;
-    lastFrameTimeRef.current = performance.now();
-
-    setHasReceivedFrame(prev => {
-      if (!prev) {
-        if (onFirstFrameReceived) onFirstFrameReceived();
-        return true;
-      }
-      return prev;
-    });
-  }, [rotationDegrees, isMirrored, onFirstFrameReceived]);
-
-  // Render WebCodecs VideoFrame directly onto Canvas
-  const renderWebCodecsFrame = useCallback((videoFrame: any) => {
-    const canvas = canvasRef.current;
+    const frame = pending.source;
     if (!canvas) {
-      videoFrame.close();
+      if (pending.isVideoFrame && typeof frame.close === 'function') {
+        frame.close();
+      }
       return;
     }
 
-    const w = videoFrame.displayWidth || videoFrame.codedWidth || 540;
-    const h = videoFrame.displayHeight || videoFrame.codedHeight || 960;
+    const w = frame.displayWidth || frame.codedWidth || frame.naturalWidth || frame.width || 540;
+    const h = frame.displayHeight || frame.codedHeight || frame.naturalHeight || frame.height || 960;
 
     const isRotated90 = rotationDegrees === 90 || rotationDegrees === 270;
     const targetW = isRotated90 ? h : w;
@@ -140,11 +105,14 @@ export const HardwareStreamPlayer: React.FC<HardwareStreamPlayerProps> = ({
         ctx.scale(-1, 1);
       }
 
-      ctx.drawImage(videoFrame, -w / 2, -h / 2, w, h);
+      ctx.drawImage(frame, -w / 2, -h / 2, w, h);
       ctx.restore();
     }
 
-    videoFrame.close();
+    if (pending.isVideoFrame && typeof frame.close === 'function') {
+      frame.close();
+    }
+
     frameCountRef.current++;
     lastFrameTimeRef.current = performance.now();
 
@@ -156,6 +124,28 @@ export const HardwareStreamPlayer: React.FC<HardwareStreamPlayerProps> = ({
       return prev;
     });
   }, [rotationDegrees, isMirrored, onFirstFrameReceived]);
+
+  // Direct 2D Canvas Image Drawer (RAF batched)
+  const drawImageToCanvas = useCallback((img: HTMLImageElement | ImageBitmap) => {
+    if (pendingFrameRef.current && pendingFrameRef.current.isVideoFrame && typeof pendingFrameRef.current.source.close === 'function') {
+      pendingFrameRef.current.source.close();
+    }
+    pendingFrameRef.current = { source: img, isVideoFrame: false };
+    if (rafIdRef.current === null) {
+      rafIdRef.current = requestAnimationFrame(renderPendingFrame);
+    }
+  }, [renderPendingFrame]);
+
+  // Render WebCodecs VideoFrame directly onto Canvas (RAF batched)
+  const renderWebCodecsFrame = useCallback((videoFrame: any) => {
+    if (pendingFrameRef.current && pendingFrameRef.current.isVideoFrame && typeof pendingFrameRef.current.source.close === 'function') {
+      pendingFrameRef.current.source.close();
+    }
+    pendingFrameRef.current = { source: videoFrame, isVideoFrame: true };
+    if (rafIdRef.current === null) {
+      rafIdRef.current = requestAnimationFrame(renderPendingFrame);
+    }
+  }, [renderPendingFrame]);
 
   // Play incoming 16kHz PCM audio chunk
   const playPcmChunk = useCallback((pcmBytes: Uint8Array) => {
@@ -284,7 +274,7 @@ export const HardwareStreamPlayer: React.FC<HardwareStreamPlayerProps> = ({
           let isKeyFrame = false;
           let detectedCodec: string | null = null;
 
-          for (let i = 0; i < Math.min(nalData.length - 8, 80); i++) {
+          for (let i = 0; i < Math.min(nalData.length - 8, 256); i++) {
             if (nalData[i] === 0x00 && nalData[i+1] === 0x00) {
               let nalByteOffset = -1;
               if (nalData[i+2] === 0x01) {
@@ -419,6 +409,14 @@ export const HardwareStreamPlayer: React.FC<HardwareStreamPlayerProps> = ({
       cleanupEventWs();
       clearInterval(fallbackPollInterval);
       clearInterval(statsInterval);
+      if (rafIdRef.current !== null) {
+        cancelAnimationFrame(rafIdRef.current);
+        rafIdRef.current = null;
+      }
+      if (pendingFrameRef.current && pendingFrameRef.current.isVideoFrame && typeof pendingFrameRef.current.source.close === 'function') {
+        pendingFrameRef.current.source.close();
+        pendingFrameRef.current = null;
+      }
       if (binaryWsRef.current) {
         binaryWsRef.current.close();
         binaryWsRef.current = null;
