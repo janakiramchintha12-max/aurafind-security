@@ -35,6 +35,8 @@ export const HardwareStreamPlayer: React.FC<HardwareStreamPlayerProps> = ({
   const audioCtxRef = useRef<AudioContext | null>(null);
   const nextAudioPlayTimeRef = useRef<number>(0);
   const hasSeenKeyFrameRef = useRef<boolean>(false);
+  const configuredCodecRef = useRef<string>('avc1.42801f');
+  const componentMountTimeRef = useRef<number>(performance.now());
   
   // Frame telemetry metrics refs
   const frameCountRef = useRef<number>(0);
@@ -185,7 +187,7 @@ export const HardwareStreamPlayer: React.FC<HardwareStreamPlayerProps> = ({
   }, [enableAudio]);
 
   // Setup WebCodecs VideoDecoder
-  const initVideoDecoder = useCallback(() => {
+  const initVideoDecoder = useCallback((codecToUse: string = 'avc1.42801f') => {
     hasSeenKeyFrameRef.current = false;
     if ('VideoDecoder' in window) {
       try {
@@ -196,21 +198,27 @@ export const HardwareStreamPlayer: React.FC<HardwareStreamPlayerProps> = ({
         const decoder = new (window as any).VideoDecoder({
           output: (frame: any) => renderWebCodecsFrame(frame),
           error: (e: any) => {
-            console.warn('[WebCodecs] Decoder error, will re-sync keyframe:', e);
+            console.warn('[WebCodecs] Decoder error, will re-sync keyframe or fallback:', e);
             hasSeenKeyFrameRef.current = false;
+            // If decoder errors out, smoothly engage MJPEG fallback so user is never stuck
+            setUseMjpegFallback(true);
           }
         });
 
         decoder.configure({
-          codec: 'avc1.42801f', // H.264 Baseline Profile Level 3.1
+          codec: codecToUse,
           optimizeForLatency: true,
           hardwareAcceleration: 'prefer-hardware'
         });
 
+        configuredCodecRef.current = codecToUse;
         videoDecoderRef.current = decoder;
       } catch (e) {
         console.error('[WebCodecs] Failed to init VideoDecoder', e);
+        setUseMjpegFallback(true);
       }
+    } else {
+      setUseMjpegFallback(true);
     }
   }, [renderWebCodecsFrame]);
 
@@ -274,22 +282,37 @@ export const HardwareStreamPlayer: React.FC<HardwareStreamPlayerProps> = ({
           
           // Detect NAL units (SPS=7, PPS=8, IDR=5)
           let isKeyFrame = false;
-          for (let i = 0; i < Math.min(nalData.length - 4, 40); i++) {
+          let detectedCodec: string | null = null;
+
+          for (let i = 0; i < Math.min(nalData.length - 8, 80); i++) {
             if (nalData[i] === 0x00 && nalData[i+1] === 0x00) {
+              let nalByteOffset = -1;
               if (nalData[i+2] === 0x01) {
-                const nalType = nalData[i+3] & 0x1F;
-                if (nalType === 5 || nalType === 7) {
-                  isKeyFrame = true;
-                  break;
-                }
+                nalByteOffset = i + 3;
               } else if (nalData[i+2] === 0x00 && nalData[i+3] === 0x01) {
-                const nalType = nalData[i+4] & 0x1F;
-                if (nalType === 5 || nalType === 7) {
+                nalByteOffset = i + 4;
+              }
+
+              if (nalByteOffset !== -1 && nalByteOffset < nalData.length) {
+                const nalType = nalData[nalByteOffset] & 0x1F;
+                if (nalType === 5) {
                   isKeyFrame = true;
-                  break;
+                } else if (nalType === 7) {
+                  isKeyFrame = true;
+                  if (nalByteOffset + 3 < nalData.length) {
+                    const profile = nalData[nalByteOffset + 1].toString(16).padStart(2, '0');
+                    const constraints = nalData[nalByteOffset + 2].toString(16).padStart(2, '0');
+                    const level = nalData[nalByteOffset + 3].toString(16).padStart(2, '0');
+                    detectedCodec = `avc1.${profile}${constraints}${level}`;
+                  }
                 }
               }
             }
+          }
+
+          // If SPS declared a different profile/level than configured, reconfigure decoder dynamically
+          if (detectedCodec && detectedCodec !== configuredCodecRef.current) {
+            initVideoDecoder(detectedCodec);
           }
 
           // Keyframe gating: Never feed delta frames before the first keyframe is seen
@@ -304,7 +327,7 @@ export const HardwareStreamPlayer: React.FC<HardwareStreamPlayerProps> = ({
 
           let decoder = videoDecoderRef.current;
           if (!decoder || decoder.state === 'closed') {
-            initVideoDecoder();
+            initVideoDecoder(configuredCodecRef.current);
             decoder = videoDecoderRef.current;
           }
 
@@ -312,7 +335,7 @@ export const HardwareStreamPlayer: React.FC<HardwareStreamPlayerProps> = ({
             try {
               const chunk = new (window as any).EncodedVideoChunk({
                 type: isKeyFrame ? 'key' : 'delta',
-                timestamp: performance.now() * 1000,
+                timestamp: Math.round(performance.now() * 1000),
                 data: nalData
               });
               decoder.decode(chunk);
@@ -372,7 +395,7 @@ export const HardwareStreamPlayer: React.FC<HardwareStreamPlayerProps> = ({
         const updated = {
           fps: Math.max(0, measuredFps),
           latencyMs: Math.max(10, Math.min(120, Math.round(22 + Math.random() * 12))),
-          kbps: measuredKbps > 0 ? measuredKbps : 850,
+          kbps: measuredKbps,
           resolution: '720p 60fps'
         };
         
@@ -384,9 +407,11 @@ export const HardwareStreamPlayer: React.FC<HardwareStreamPlayerProps> = ({
         lastMetricTimeRef.current = now;
       }
 
-      // Auto-dismiss loading spinner after 2.5s if stream bytes are arriving
-      if (!hasReceivedFrame && (performance.now() - lastFrameTimeRef.current < 2000 || byteCountRef.current > 0)) {
-        setHasReceivedFrame(true);
+      // Auto-fallback to MJPEG if 3.5s have elapsed with data arriving but 0 frames decoded
+      const timeSinceMount = (performance.now() - componentMountTimeRef.current) / 1000;
+      if (timeSinceMount > 3.0 && frameCountRef.current === 0 && !useMjpegFallback && byteCountRef.current > 0) {
+        console.warn('[HardwareStreamPlayer] WebCodecs rendered 0 frames in 3s, auto-switching to MJPEG stream');
+        setUseMjpegFallback(true);
       }
     }, 400);
 
@@ -409,9 +434,10 @@ export const HardwareStreamPlayer: React.FC<HardwareStreamPlayerProps> = ({
     };
   }, [deviceId, streamSource, initVideoDecoder, drawImageToCanvas, playPcmChunk, onStatsChange, hasReceivedFrame]);
 
+  const token = localStorage.getItem('token') || '';
   const mjpegFallbackUrl = streamSource === 'SCREEN' 
-    ? `/api/v1/devices/${deviceId}/screen/mjpeg?t=${Date.now()}`
-    : `/api/v1/devices/${deviceId}/camera/mjpeg?t=${Date.now()}`;
+    ? `/api/v1/devices/${deviceId}/screen/mjpeg?token=${encodeURIComponent(token)}&t=${Date.now()}`
+    : `/api/v1/devices/${deviceId}/camera/mjpeg?token=${encodeURIComponent(token)}&t=${Date.now()}`;
 
   return (
     <div className={`relative bg-black flex items-center justify-center overflow-hidden ${className}`}>
@@ -429,8 +455,14 @@ export const HardwareStreamPlayer: React.FC<HardwareStreamPlayerProps> = ({
           src={mjpegFallbackUrl}
           alt="Live Stream Fallback"
           className="max-h-full max-w-full object-contain select-none"
-          onLoad={() => setHasReceivedFrame(true)}
-          onError={() => setUseMjpegFallback(false)}
+          onLoad={() => {
+            setHasReceivedFrame(true);
+            frameCountRef.current++;
+            lastFrameTimeRef.current = performance.now();
+          }}
+          onError={() => {
+            console.warn('[HardwareStreamPlayer] MJPEG stream waiting for device');
+          }}
         />
       )}
 
@@ -439,17 +471,19 @@ export const HardwareStreamPlayer: React.FC<HardwareStreamPlayerProps> = ({
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/80 space-y-3 z-20">
           <div className="w-12 h-12 border-4 border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin"></div>
           <div className="text-center">
-            <p className="text-sm font-bold text-white tracking-wide">Initializing Real-Time Stream...</p>
-            <p className="text-xs text-slate-400 font-mono mt-1">Connecting to child device via low-latency pipeline</p>
+            <p className="text-sm font-bold text-white tracking-wide">Connecting to Live Stream...</p>
+            <p className="text-xs text-slate-400 font-mono mt-1">Waiting for mobile device to broadcast video frames</p>
           </div>
         </div>
       )}
 
       {/* Telemetry HUD Overlay */}
-      <div className="absolute top-3 left-3 bg-black/75 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/15 text-[11px] font-mono text-cyan-300 flex items-center space-x-3 pointer-events-none shadow-xl z-10">
-        <span className="flex items-center gap-1.5 text-emerald-400 font-bold">
-          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
-          <span>{stats.fps > 0 ? `${stats.fps} FPS LIVE` : 'STREAM ONLINE'}</span>
+      <div className="absolute top-3 left-3 bg-black/75 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/15 text-[11px] font-mono flex items-center space-x-3 pointer-events-none shadow-xl z-10">
+        <span className="flex items-center gap-1.5 font-bold">
+          <span className={`w-2 h-2 rounded-full ${hasReceivedFrame ? 'bg-emerald-400 animate-ping' : 'bg-amber-400'}`}></span>
+          <span className={hasReceivedFrame ? 'text-emerald-400' : 'text-amber-400'}>
+            {stats.fps > 0 ? `${stats.fps} FPS LIVE` : (hasReceivedFrame ? 'STREAM ONLINE' : 'CONNECTING...')}
+          </span>
         </span>
         <span className="text-slate-300">|</span>
         <span className="text-indigo-300 font-bold">
@@ -464,7 +498,10 @@ export const HardwareStreamPlayer: React.FC<HardwareStreamPlayerProps> = ({
       {/* Engine Switcher on bottom-right of player */}
       <div className="absolute bottom-3 right-3 flex items-center space-x-1.5 bg-slate-900/80 backdrop-blur-md px-2 py-1 rounded-xl border border-slate-700/60 z-20">
         <button
-          onClick={() => setUseMjpegFallback(false)}
+          onClick={() => {
+            setUseMjpegFallback(false);
+            initVideoDecoder(configuredCodecRef.current);
+          }}
           className={`flex items-center space-x-1 px-2 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
             !useMjpegFallback ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'
           }`}

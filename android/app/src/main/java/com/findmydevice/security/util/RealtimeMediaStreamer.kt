@@ -187,11 +187,27 @@ object RealtimeMediaStreamer {
             ) { nalBytes, _, timestampUs -> sendBinaryPacket(PKT_VIDEO, SRC_SCREEN, timestampUs, nalBytes) }
             val encoderSurface = screenEncoder?.start() ?: run { stopScreenMirrorStream(); return }
             if (screenMediaProjection == null && cachedProjectionResultData != null) {
-                val pm = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-                screenMediaProjection = pm.getMediaProjection(cachedProjectionResultCode, cachedProjectionResultData!!.clone() as Intent)
-                screenMediaProjection?.registerCallback(object : MediaProjection.Callback() {
-                    override fun onStop() { screenMediaProjection = null; cachedProjectionResultData = null; stopScreenMirrorStream() }
-                }, screenBgHandler)
+                try {
+                    val pm = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+                    screenMediaProjection = pm.getMediaProjection(cachedProjectionResultCode, cachedProjectionResultData!!.clone() as Intent)
+                    screenMediaProjection?.registerCallback(object : MediaProjection.Callback() {
+                        override fun onStop() {
+                            Log.w(TAG, "[Screen] MediaProjection onStop callback triggered")
+                            screenMediaProjection = null
+                            stopScreenMirrorStream()
+                        }
+                    }, screenBgHandler)
+                } catch (se: SecurityException) {
+                    Log.w(TAG, "[Screen] MediaProjection token expired: ${se.message}")
+                    cachedProjectionResultData = null
+                    screenMediaProjection = null
+                    context.startActivity(
+                        Intent(context, com.findmydevice.security.ui.ScreenCapturePermissionActivity::class.java)
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                    )
+                    stopScreenMirrorStream()
+                    return
+                }
             }
             screenVirtualDisplay = screenMediaProjection?.createVirtualDisplay(
                 "AuraFindScreenHW", encWidth, encHeight, metrics.densityDpi,

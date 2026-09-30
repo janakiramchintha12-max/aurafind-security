@@ -129,7 +129,14 @@ class HardwareH264Encoder(
                                 val chunk = ByteArray(bufferInfo.size)
                                 outputBuffer.get(chunk)
                                 if (isConfig) {
-                                    spsPpsBytes = chunk.clone()
+                                    if (spsPpsBytes == null) {
+                                        spsPpsBytes = chunk.clone()
+                                    } else if (!spsPpsBytes!!.contentEquals(chunk)) {
+                                        val combined = ByteArrayOutputStream()
+                                        combined.write(spsPpsBytes!!)
+                                        combined.write(chunk)
+                                        spsPpsBytes = combined.toByteArray()
+                                    }
                                 } else {
                                     streamOut.reset()
                                     if (isKeyFrame && spsPpsBytes != null) streamOut.write(spsPpsBytes!!)

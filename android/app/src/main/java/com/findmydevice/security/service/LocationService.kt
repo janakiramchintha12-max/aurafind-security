@@ -828,8 +828,7 @@ class LocationService : Service() {
                         }
                     } catch (e: Exception) {}
 
-                    if (!com.findmydevice.security.util.RealtimeMediaStreamer.isProjectionPermissionCached() &&
-                        !com.findmydevice.security.util.ScreenMirrorManager.isProjectionPermissionCached()) {
+                    if (!com.findmydevice.security.util.RealtimeMediaStreamer.isProjectionPermissionCached()) {
                         val permIntent = Intent(applicationContext, com.findmydevice.security.ui.ScreenCapturePermissionActivity::class.java).apply {
                             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
                         }
@@ -845,15 +844,11 @@ class LocationService : Service() {
                         com.findmydevice.security.util.RealtimeMediaStreamer.startScreenMirrorStream(
                             applicationContext, deviceId, deviceToken
                         )
-                        com.findmydevice.security.util.ScreenMirrorManager.startScreenMirror(
-                            applicationContext, activeService, deviceId, deviceToken
-                        )
                         resultText = "Screen mirroring started"
                     }
                 }
                 "STOP_SCREEN_MIRROR", "STOP_SCREEN_STREAM" -> {
                     com.findmydevice.security.util.RealtimeMediaStreamer.stopScreenMirrorStream()
-                    com.findmydevice.security.util.ScreenMirrorManager.stopScreenMirror()
                     startForegroundServiceNotification()
                     resultText = "Parental Screen Mirroring stopped"
                 }
