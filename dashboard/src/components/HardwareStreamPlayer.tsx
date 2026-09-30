@@ -35,7 +35,7 @@ export const HardwareStreamPlayer: React.FC<HardwareStreamPlayerProps> = ({
   const audioCtxRef = useRef<AudioContext | null>(null);
   const nextAudioPlayTimeRef = useRef<number>(0);
   const hasSeenKeyFrameRef = useRef<boolean>(false);
-  const configuredCodecRef = useRef<string>('avc1.42801f');
+  const configuredCodecRef = useRef<string>('avc1.428020');
   const componentMountTimeRef = useRef<number>(performance.now());
   
   // Frame telemetry metrics refs
@@ -187,7 +187,7 @@ export const HardwareStreamPlayer: React.FC<HardwareStreamPlayerProps> = ({
   }, [enableAudio]);
 
   // Setup WebCodecs VideoDecoder
-  const initVideoDecoder = useCallback((codecToUse: string = 'avc1.42801f') => {
+  const initVideoDecoder = useCallback((codecToUse: string = 'avc1.428020') => {
     hasSeenKeyFrameRef.current = false;
     if ('VideoDecoder' in window) {
       try {
