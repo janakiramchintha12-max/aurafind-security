@@ -64,6 +64,7 @@ dependencies {
 
     // Location & Google Play Services
     implementation("com.google.android.gms:play-services-location:21.1.0")
+    implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
 
     // Room Database & KSP Compiler
     implementation("androidx.room:room-runtime:2.6.1")

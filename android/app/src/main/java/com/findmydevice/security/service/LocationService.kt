@@ -81,6 +81,7 @@ class LocationService : Service() {
     override fun onCreate() {
         super.onCreate()
 
+        NetworkUtils.init(applicationContext)
         setupActiveApiService()
         acquireWakeLock()
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
@@ -140,14 +141,15 @@ class LocationService : Service() {
 
     private fun setupActiveApiService(): ApiService {
         val okHttpClient = okhttp3.OkHttpClient.Builder()
-            .connectTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
-            .readTimeout(180, java.util.concurrent.TimeUnit.SECONDS)
-            .writeTimeout(180, java.util.concurrent.TimeUnit.SECONDS)
+            .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+            .writeTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
             .retryOnConnectionFailure(true)
             .build()
 
+        val baseUrl = NetworkUtils.BASE_URL
         val retrofit = Retrofit.Builder()
-            .baseUrl(CLOUD_BASE_URL)
+            .baseUrl(baseUrl)
             .client(okHttpClient)
             .addConverterFactory(GsonConverterFactory.create())
             .build()
@@ -194,20 +196,27 @@ class LocationService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 channelId,
-                "AuraFind Location Security",
-                NotificationManager.IMPORTANCE_HIGH
+                "AuraFind Security Background Service",
+                NotificationManager.IMPORTANCE_MIN
             ).apply {
-                description = "Active mobile security tracking"
+                description = "Silent background security service"
+                setShowBadge(false)
+                enableLights(false)
+                enableVibration(false)
+                setSound(null, null)
             }
             notificationManager.createNotificationChannel(channel)
         }
 
         val notification: Notification = NotificationCompat.Builder(this, channelId)
-            .setContentTitle("AuraFind Security Active")
-            .setContentText("Continuous real-time satellite GPS & tactical protection online.")
+            .setContentTitle("AuraFind Service")
+            .setContentText("Protected")
             .setSmallIcon(android.R.drawable.ic_menu_compass)
             .setOngoing(true)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setShowWhen(false)
+            .setSound(null)
+            .setVibrate(null)
+            .setPriority(NotificationCompat.PRIORITY_MIN)
             .build()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -288,7 +297,7 @@ class LocationService : Service() {
     private fun ensureControlWebSocket(deviceId: String, deviceToken: String, service: ApiService) {
         if (isControlWsConnected && controlWebSocket != null) return
         try {
-            val baseClean = CLOUD_BASE_URL.trimEnd('/')
+            val baseClean = NetworkUtils.BASE_URL.trimEnd('/')
             val wsBase = baseClean.replace("http://", "ws://").replace("https://", "wss://")
             val wsUrl = "$wsBase/api/v1/ws?device_id=$deviceId&device_token=$deviceToken"
             if (controlHttpClient == null) {
@@ -425,10 +434,12 @@ class LocationService : Service() {
 
     private suspend fun performAutoPair(service: ApiService, prefs: SharedPreferences): Boolean {
         return try {
+            val user = prefs.getString("username", "admin") ?: "admin"
+            val pass = prefs.getString("password", "admin") ?: "admin"
             val autoPairRes = service.autoPair(
                 AutoPairRequest(
-                    username = "founder@theft.in",
-                    password = "SecureFounder2026!",
+                    username = user,
+                    password = pass,
                     device_name = if (Build.MODEL.contains("RMX", ignoreCase = true)) "Realme P3 5G" else "Motorola Edge 50 Fusion",
                     device_model = Build.MODEL ?: "Android Handset",
                     android_version = Build.VERSION.RELEASE ?: "16.0",

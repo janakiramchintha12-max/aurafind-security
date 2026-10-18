@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Plus, RefreshCw, Smartphone, ShieldCheck, AlertTriangle, 
-  Download, QrCode, Shield, Compass, Video, Volume2, Key, Radio 
+  Download, QrCode, Shield, Compass, Video, Volume2, Key, Radio,
+  Copy, Check, Wifi, ExternalLink
 } from 'lucide-react';
 import { devicesApi, commandsApi, connectWebSocket } from '../services/api';
 import { Device } from '../types';
@@ -25,6 +26,31 @@ export const DashboardPage: React.FC = () => {
   const [activeTtsDevice, setActiveTtsDevice] = useState<Device | null>(null);
   const [activeReportDevice, setActiveReportDevice] = useState<Device | null>(null);
   const [alertMsg, setAlertMsg] = useState<{ text: string; type: 'info' | 'success' | 'error' } | null>(null);
+
+  // Auto-detect best reachable host for phone scanning (Wi-Fi LAN IP if localhost)
+  const host = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
+  const defaultBaseUrl = (host === 'localhost' || host === '127.0.0.1')
+    ? 'http://192.168.31.94:8080'
+    : (typeof window !== 'undefined' ? window.location.origin : 'http://192.168.31.94:8080');
+
+  const [qrBaseUrl, setQrBaseUrl] = useState(defaultBaseUrl);
+  const [qrTab, setQrTab] = useState<'download' | 'pair'>('download');
+  const [copiedUrl, setCopiedUrl] = useState(false);
+
+  const downloadQrUrl = `${qrBaseUrl}/download`;
+  const pairPayload = JSON.stringify({
+    server_url: qrBaseUrl,
+    auto_pair: true
+  });
+
+  const activeQrData = qrTab === 'download' ? downloadQrUrl : pairPayload;
+  const qrImageSrc = `https://api.qrserver.com/v1/create-qr-code/?size=260x260&margin=8&data=${encodeURIComponent(activeQrData)}`;
+
+  const handleCopyUrl = () => {
+    navigator.clipboard.writeText(downloadQrUrl);
+    setCopiedUrl(true);
+    setTimeout(() => setCopiedUrl(false), 2000);
+  };
 
   const fetchDevices = async () => {
     try {
@@ -217,41 +243,138 @@ export const DashboardPage: React.FC = () => {
       ) : devices.length === 0 ? (
         <div className="space-y-6">
           {/* Hero Welcome Banner */}
-          <div className="bg-gradient-to-br from-slate-800/90 via-slate-900/90 to-cyan-950/40 border border-slate-700/80 rounded-3xl p-8 sm:p-10 shadow-2xl backdrop-blur relative overflow-hidden">
+          {/* Hero Welcome Banner with Live QR Scanner */}
+          <div className="bg-gradient-to-br from-slate-800/95 via-slate-900/95 to-cyan-950/40 border border-cyan-500/30 rounded-3xl p-6 sm:p-8 shadow-2xl backdrop-blur relative overflow-hidden">
             <div className="absolute top-0 right-0 w-96 h-96 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none"></div>
             
-            <div className="max-w-2xl space-y-4 relative z-10">
-              <div className="inline-flex items-center space-x-2 px-3 py-1 bg-cyan-500/10 border border-cyan-500/30 rounded-full text-cyan-400 text-xs font-bold">
-                <Shield className="w-3.5 h-3.5" />
-                <span>Next-Gen Anti-Theft & Handset Security</span>
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center relative z-10">
+              
+              {/* Left Column: Information & Actions */}
+              <div className="lg:col-span-7 space-y-4">
+                <div className="inline-flex items-center space-x-2 px-3 py-1 bg-cyan-500/10 border border-cyan-500/30 rounded-full text-cyan-400 text-xs font-bold">
+                  <Shield className="w-3.5 h-3.5" />
+                  <span>Next-Gen Anti-Theft & Handset Security</span>
+                </div>
+
+                <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+                  Protect & Track Your Handset in Real-Time
+                </h2>
+
+                <p className="text-slate-300 text-xs sm:text-sm leading-relaxed">
+                  Connect your phone wirelessly with zero USB cables. Scan the QR code with your mobile camera or Google Scanner to download the app, install, and link instantly to your live dashboard.
+                </p>
+
+                <div className="flex flex-wrap items-center gap-3 pt-2">
+                  <button
+                    onClick={() => handleOpenEnrollment(null)}
+                    className="px-5 py-2.5 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold text-xs rounded-xl shadow-xl shadow-cyan-600/30 transition-all flex items-center space-x-2 cursor-pointer"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Pair Handset via Modal</span>
+                  </button>
+
+                  <a
+                    href="/download/app.apk"
+                    download="AuraFind-Security.apk"
+                    className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-semibold text-xs rounded-xl transition-all flex items-center space-x-2"
+                  >
+                    <Download className="w-4 h-4 text-cyan-400" />
+                    <span>Download APK Client</span>
+                  </a>
+                </div>
+
+                <div className="pt-2 border-t border-slate-800/80 grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] text-slate-400">
+                  <div className="flex items-center space-x-2">
+                    <span className="w-1.5 h-1.5 rounded-full bg-cyan-400"></span>
+                    <span>100% Wireless Onboarding</span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                    <span>Google Scanner / Lens Compatible</span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <span className="w-1.5 h-1.5 rounded-full bg-cyan-400"></span>
+                    <span>Silent Background Notifications</span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                    <span>Multi-Device Tracking</span>
+                  </div>
+                </div>
               </div>
 
-              <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-                Protect & Track Your Handset in Real-Time
-              </h2>
+              {/* Right Column: Live Instant Onboarding QR Code */}
+              <div className="lg:col-span-5 flex flex-col items-center">
+                <div className="bg-slate-950/90 border border-cyan-500/40 rounded-2xl p-5 shadow-2xl shadow-cyan-950/50 w-full max-w-sm flex flex-col items-center text-center space-y-3">
+                  
+                  {/* QR Tabs */}
+                  <div className="flex items-center bg-slate-900 border border-slate-800 rounded-xl p-1 w-full text-xs">
+                    <button
+                      onClick={() => setQrTab('download')}
+                      className={`flex-1 py-1.5 rounded-lg font-bold transition-all ${
+                        qrTab === 'download' 
+                          ? 'bg-cyan-600 text-white shadow-md' 
+                          : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      1. Download APK
+                    </button>
+                    <button
+                      onClick={() => setQrTab('pair')}
+                      className={`flex-1 py-1.5 rounded-lg font-bold transition-all ${
+                        qrTab === 'pair' 
+                          ? 'bg-cyan-600 text-white shadow-md' 
+                          : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      2. Instant Pair
+                    </button>
+                  </div>
 
-              <p className="text-slate-300 text-xs sm:text-sm leading-relaxed">
-                Connect your personal Android phone, family devices, or backup phones to monitor live GPS satellite location, stream dual cameras in HD, mirror screen, and sound loud anti-theft alarms.
-              </p>
+                  {/* QR Image Box */}
+                  <div className="p-3 bg-white rounded-2xl shadow-xl border-4 border-cyan-500/20 group relative">
+                    <img
+                      src={qrImageSrc}
+                      alt="AuraFind Fast Onboarding QR Code"
+                      className="w-48 h-48 sm:w-52 sm:h-52 rounded-lg object-contain"
+                    />
+                  </div>
 
-              <div className="flex flex-wrap items-center gap-3 pt-2">
-                <button
-                  onClick={() => handleOpenEnrollment(null)}
-                  className="px-6 py-3 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold text-xs sm:text-sm rounded-xl shadow-xl shadow-cyan-600/30 transition-all flex items-center space-x-2 cursor-pointer"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>Pair First Android Device</span>
-                </button>
+                  {/* Description */}
+                  <div className="space-y-1">
+                    <div className="text-xs font-bold text-white flex items-center justify-center space-x-1.5">
+                      <QrCode className="w-3.5 h-3.5 text-cyan-400" />
+                      <span>
+                        {qrTab === 'download' 
+                          ? 'Scan with Google Scanner / Camera' 
+                          : 'Scan inside AuraFind App'}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-400 max-w-xs leading-relaxed">
+                      {qrTab === 'download' 
+                        ? 'Point mobile camera or Google Scanner here to download APK in seconds.' 
+                        : 'Open installed AuraFind app and tap Scan QR Code to connect.'}
+                    </p>
+                  </div>
 
-                <a
-                  href="/download/app.apk"
-                  download="AuraFind-Security.apk"
-                  className="px-5 py-3 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-semibold text-xs sm:text-sm rounded-xl transition-all flex items-center space-x-2"
-                >
-                  <Download className="w-4 h-4 text-cyan-400" />
-                  <span>Download APK Client</span>
-                </a>
+                  {/* Host IP & Copy */}
+                  <div className="w-full bg-slate-900/80 border border-slate-800 rounded-xl px-3 py-2 flex items-center justify-between text-[11px] text-slate-300">
+                    <div className="flex items-center space-x-2 truncate">
+                      <Wifi className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                      <span className="font-mono text-cyan-300 truncate">{qrBaseUrl}</span>
+                    </div>
+                    <button
+                      onClick={handleCopyUrl}
+                      className="p-1 hover:text-cyan-300 text-slate-400 transition-colors ml-2"
+                      title="Copy URL"
+                    >
+                      {copiedUrl ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+
+                </div>
               </div>
+
             </div>
           </div>
 

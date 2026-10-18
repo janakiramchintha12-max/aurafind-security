@@ -9,7 +9,25 @@ import android.telephony.SubscriptionManager
 import android.telephony.TelephonyManager
 
 object NetworkUtils {
-    const val BASE_URL = "https://aurafind-security.onrender.com/"
+    @Volatile
+    private var customBaseUrl: String? = null
+
+    val BASE_URL: String
+        get() = customBaseUrl ?: "http://192.168.31.94:8080/"
+
+    fun setServerUrl(url: String) {
+        var clean = url.trim()
+        if (!clean.endsWith("/")) clean += "/"
+        customBaseUrl = clean
+    }
+
+    fun init(context: Context) {
+        val prefs = context.getSharedPreferences("aurafind_prefs", Context.MODE_PRIVATE)
+        val saved = prefs.getString("server_url", null)
+        if (!saved.isNullOrBlank()) {
+            setServerUrl(saved)
+        }
+    }
 
     fun isNetworkAvailable(context: Context): Boolean {
         val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return false

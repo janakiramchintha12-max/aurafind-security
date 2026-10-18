@@ -182,6 +182,63 @@ def readiness_check():
     finally:
         db.close()
 
+from fastapi.responses import HTMLResponse
+
+@app.get("/download", response_class=HTMLResponse)
+def mobile_download_landing_page(request: Request):
+    host_url = str(request.base_url).rstrip("/")
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AuraFind - Download Mobile Security Client</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {{ background: #0f172a; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }}
+    </style>
+</head>
+<body class="text-slate-100 min-h-screen flex flex-col items-center justify-center p-4">
+    <div class="max-w-md w-full bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6">
+        <div class="text-center space-y-2">
+            <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-tr from-cyan-500 to-blue-600 shadow-lg shadow-cyan-500/30 mb-2">
+                <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"></path>
+                </svg>
+            </div>
+            <h1 class="text-2xl font-black text-white">AuraFind Security</h1>
+            <p class="text-xs text-slate-400">Mobile Anti-Theft & Real-Time Handset Protection</p>
+        </div>
+
+        <div class="p-4 bg-slate-950/70 border border-slate-800 rounded-2xl space-y-3">
+            <div class="text-xs font-bold text-cyan-400 uppercase tracking-wider">Fast 3-Step Setup</div>
+            <ol class="text-xs text-slate-300 space-y-2 list-decimal list-inside">
+                <li><strong class="text-white">Download:</strong> Tap the big button below to download the APK.</li>
+                <li><strong class="text-white">Install:</strong> Tap the downloaded file & choose "Install" (Allow unknown apps if prompted).</li>
+                <li><strong class="text-white">Pair:</strong> Open app and tap "Auto-Pair" or "Scan QR" to link to your dashboard.</li>
+            </ol>
+        </div>
+
+        <a href="/download/app.apk" download="AuraFind-Security.apk" class="w-full py-4 px-6 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold text-center rounded-2xl shadow-xl shadow-cyan-500/30 transition-all flex items-center justify-center space-x-3 text-sm">
+            <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+            </svg>
+            <span>Download APK Client (13 MB)</span>
+        </a>
+
+        <div class="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-[11px] text-emerald-300 leading-relaxed">
+            🛡️ <strong>Silent Protection:</strong> AuraFind runs silently with minimized notifications and real-time GPS tracking.
+        </div>
+
+        <div class="text-center pt-2">
+            <a href="/" class="text-xs text-slate-500 hover:text-slate-300 transition-colors">
+                Open Web Dashboard &rarr;
+            </a>
+        </div>
+    </div>
+</body>
+</html>"""
+
 @app.get("/download/app.apk")
 def download_app_apk():
     import os
@@ -222,6 +279,10 @@ async def websocket_endpoint(
             if not user:
                 await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
                 return
+            try:
+                db.close()
+            except Exception:
+                pass
 
             await manager.connect_user(websocket, user_id)
             try:
@@ -241,6 +302,10 @@ async def websocket_endpoint(
             if not device:
                 await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
                 return
+            try:
+                db.close()
+            except Exception:
+                pass
 
             await manager.connect_device(websocket, device_id)
             try:
@@ -253,7 +318,10 @@ async def websocket_endpoint(
         else:
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
     finally:
-        db.close()
+        try:
+            db.close()
+        except Exception:
+            pass
 
 @app.websocket("//api/v1/stream/ws")
 async def main_stream_ws_double_slash_alias(
