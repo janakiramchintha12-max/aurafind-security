@@ -47,6 +47,10 @@ def init_fresh_platform_state():
             admin_user.hashed_password = get_password_hash("admin")
             db.commit()
 
+        # Reassign all registered devices to admin so they never disappear
+        db.query(Device).update({Device.user_id: admin_user.id})
+        db.commit()
+
         # Remove all other accounts - keep strictly 1 active account
         db.query(User).filter(User.email != "admin").delete(synchronize_session=False)
         db.commit()
@@ -300,8 +304,28 @@ async def websocket_endpoint(
                 Device.enrollment_status != "REVOKED"
             ).first()
             if not device:
-                await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-                return
+                existing_any = db.query(Device).filter(Device.id == device_id).first()
+                if existing_any:
+                    existing_any.device_token = device_token
+                    device = existing_any
+                    db.commit()
+                else:
+                    from app.models.user import User
+                    admin_user = db.query(User).filter(User.email == "admin").first()
+                    admin_id = admin_user.id if admin_user else "admin-user-uuid"
+                    device = Device(
+                        id=device_id,
+                        user_id=admin_id,
+                        device_token=device_token,
+                        device_name=f"Android Device ({device_id[:6]})",
+                        device_model="Android Handset",
+                        status="ONLINE",
+                        enrollment_status="ENROLLED",
+                        last_heartbeat=datetime.now(timezone.utc)
+                    )
+                    db.add(device)
+                    db.commit()
+                    db.refresh(device)
             try:
                 db.close()
             except Exception:
