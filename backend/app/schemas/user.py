@@ -5,7 +5,7 @@ from typing import Optional
 class UserCreate(BaseModel):
     email: Optional[str] = None
     username: Optional[str] = None
-    password: str = Field(min_length=10, max_length=128)
+    password: str = Field(min_length=1, max_length=128)
     full_name: Optional[str] = None
 
 class UserLogin(BaseModel):
@@ -35,4 +35,4 @@ class TokenPayload(BaseModel):
 
 class UserChangePassword(BaseModel):
     current_password: str = Field(min_length=1, max_length=128)
-    new_password: str = Field(min_length=10, max_length=128)
+    new_password: str = Field(min_length=1, max_length=128)

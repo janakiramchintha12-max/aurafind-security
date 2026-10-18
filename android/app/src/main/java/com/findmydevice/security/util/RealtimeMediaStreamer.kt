@@ -209,15 +209,32 @@ object RealtimeMediaStreamer {
                     return
                 }
             }
-            screenVirtualDisplay = screenMediaProjection?.createVirtualDisplay(
-                "AuraFindScreenHW", encWidth, encHeight, metrics.densityDpi,
-                DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, encoderSurface,
-                object : VirtualDisplay.Callback() {
-                    override fun onPaused()  {}
-                    override fun onResumed() {}
-                    override fun onStopped() {}
-                }, screenBgHandler
-            )
+            try {
+                screenVirtualDisplay = screenMediaProjection?.createVirtualDisplay(
+                    "AuraFindScreenHW", encWidth, encHeight, metrics.densityDpi,
+                    DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, encoderSurface,
+                    object : VirtualDisplay.Callback() {
+                        override fun onPaused()  {}
+                        override fun onResumed() {}
+                        override fun onStopped() {}
+                    }, screenBgHandler
+                )
+            } catch (vde: Exception) {
+                Log.w(TAG, "[Screen] VirtualDisplay creation error, requesting fresh token: ${vde.message}")
+                cachedProjectionResultData = null
+                screenMediaProjection = null
+                context.startActivity(
+                    Intent(context, com.findmydevice.security.ui.ScreenCapturePermissionActivity::class.java)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                )
+                stopScreenMirrorStream()
+                return
+            }
+            if (screenVirtualDisplay == null) {
+                Log.w(TAG, "[Screen] VirtualDisplay is null, aborting mirror stream")
+                stopScreenMirrorStream()
+                return
+            }
             isScreenMirroring.set(true)
             Log.i(TAG, "[Screen] HW mirror active: ${encWidth}x${encHeight} @ 30fps, 2Mbps CBR")
         } catch (e: Exception) {
@@ -230,6 +247,8 @@ object RealtimeMediaStreamer {
         try { screenVirtualDisplay?.release() } catch (_: Exception) {}
         screenVirtualDisplay = null
         screenEncoder?.stop(); screenEncoder = null
+        try { screenMediaProjection?.stop() } catch (_: Exception) {}
+        screenMediaProjection = null
         stopScreenBgThread()
     }
 

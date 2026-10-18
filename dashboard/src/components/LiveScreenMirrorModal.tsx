@@ -49,10 +49,10 @@ export const LiveScreenMirrorModal: React.FC<LiveScreenMirrorModalProps> = ({ de
   const toggleAmbientAudio = async () => {
     try {
       if (!ambientAudioActive) {
-        await commandsApi.dispatch(device.id, 'RECORD_AUDIO_CLIP', { duration_seconds: 300 });
+        await commandsApi.dispatch(device.id, 'START_AUDIO_STREAM');
         setAmbientAudioActive(true);
       } else {
-        await commandsApi.dispatch(device.id, 'STOP_AUDIO_CLIP');
+        await commandsApi.dispatch(device.id, 'STOP_AUDIO_STREAM');
         setAmbientAudioActive(false);
       }
     } catch (e) {

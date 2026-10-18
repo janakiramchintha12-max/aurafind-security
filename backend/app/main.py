@@ -31,56 +31,25 @@ def init_fresh_platform_state():
         db.query(AudioRecording).delete(synchronize_session=False)
         db.query(VideoRecording).delete(synchronize_session=False)
 
-        # 2. Seed or update founder@theft.in User (New Executive Founder ID)
-        founder_user = db.query(User).filter(User.email == "founder@theft.in").first()
-        if not founder_user:
-            founder_user = User(
-                id="founder-ceo-uuid",
-                email="founder@theft.in",
-                hashed_password=get_password_hash("SecureFounder2026!"),
-                full_name="Founder & CEO"
-            )
-            db.add(founder_user)
-            db.commit()
-            db.refresh(founder_user)
-        else:
-            founder_user.hashed_password = get_password_hash("SecureFounder2026!")
-            db.commit()
-
-        # 3. Seed or update janakiram12 User
-        janaki_user = db.query(User).filter(User.email == "janakiram12").first()
-        if not janaki_user:
-            janaki_user = User(
-                id="janakiram12-user-uuid",
-                email="janakiram12",
-                hashed_password=get_password_hash("Janakiram12"),
-                full_name="Janaki Ram"
-            )
-            db.add(janaki_user)
-            db.commit()
-            db.refresh(janaki_user)
-        else:
-            janaki_user.hashed_password = get_password_hash("Janakiram12")
-            db.commit()
-
-        # 4. Seed or update admin User
+        # 2. Ensure only the single simple admin account exists
         admin_user = db.query(User).filter(User.email == "admin").first()
         if not admin_user:
             admin_user = User(
-                id="default-admin-uuid",
+                id="admin-user-uuid",
                 email="admin",
-                hashed_password=get_password_hash("1234"),
-                full_name="Admin User"
+                hashed_password=get_password_hash("admin"),
+                full_name="Administrator"
             )
             db.add(admin_user)
             db.commit()
             db.refresh(admin_user)
         else:
-            admin_user.hashed_password = get_password_hash("1234")
+            admin_user.hashed_password = get_password_hash("admin")
             db.commit()
 
-        # Clean slate: devices are not seeded automatically so user can start from the beginning.
-        pass
+        # Remove all other accounts - keep strictly 1 active account
+        db.query(User).filter(User.email != "admin").delete(synchronize_session=False)
+        db.commit()
     except Exception as e:
         db.rollback()
         logging.getLogger("aurafind.init").warning(f"Platform init warning: {e}")

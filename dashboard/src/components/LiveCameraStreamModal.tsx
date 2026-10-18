@@ -62,8 +62,8 @@ export const LiveCameraStreamModal: React.FC<LiveCameraStreamModalProps> = ({ de
   const [rotationDegrees, setRotationDegrees] = useState<number>(0);
   const [isMirrored, setIsMirrored] = useState<boolean>(false);
   const [enhanceFilter] = useState<boolean>(true);
-  const [streamEngine] = useState<'NATIVE_MJPEG' | 'SMOOTH_BUFFER' | 'DIRECT_LIVE'>('SMOOTH_BUFFER');
-  const bufferDelayMs = 2500; // 2.5 seconds jitter buffer for crystal clear stutter-free playback
+  const [streamEngine, setStreamEngine] = useState<'HARDWARE_GPU' | 'NATIVE_MJPEG' | 'SMOOTH_BUFFER'>('HARDWARE_GPU');
+  const bufferDelayMs = 0; // Zero artificial delay for realtime live playback
   const [displayFps, setDisplayFps] = useState<number>(0);
   const [hasReceivedFirstFrame, setHasReceivedFirstFrame] = useState<boolean>(false);
   const [rawFrameSrc, setRawFrameSrc] = useState<string | null>(null);
@@ -385,6 +385,15 @@ export const LiveCameraStreamModal: React.FC<LiveCameraStreamModalProps> = ({ de
             <div className={`relative bg-black rounded-2xl overflow-hidden border border-slate-800 shadow-2xl flex items-center justify-center ${
               isFullscreen ? 'flex-1' : 'aspect-video'
             }`}>
+              {streamEngine === 'HARDWARE_GPU' && (
+                <HardwareStreamPlayer
+                  deviceId={device.id}
+                  streamSource={currentFacing === 'BACK' ? 'CAM_BACK' : 'CAM_FRONT'}
+                  rotationDegrees={rotationDegrees}
+                  isMirrored={isMirrored}
+                  className="w-full h-full"
+                />
+              )}
               {streamEngine === 'NATIVE_MJPEG' && (
                 <img
                   src={mjpegStreamUrl}
@@ -397,7 +406,7 @@ export const LiveCameraStreamModal: React.FC<LiveCameraStreamModalProps> = ({ de
                   onError={() => {}}
                 />
               )}
-              {streamEngine !== 'NATIVE_MJPEG' && (
+              {streamEngine === 'SMOOTH_BUFFER' && (
                 <>
                   <canvas
                     ref={canvasRef}
@@ -406,26 +415,29 @@ export const LiveCameraStreamModal: React.FC<LiveCameraStreamModalProps> = ({ de
                   {!hasReceivedFirstFrame && rawFrameSrc && (
                     <img src={rawFrameSrc} alt="Stream" style={{ transform: `rotate(${rotationDegrees}deg)`, filter: enhanceFilter ? 'contrast(1.06) brightness(1.03) saturate(1.08)' : 'none' }} className="w-full h-full object-contain" />
                   )}
+                  {!hasReceivedFirstFrame && !rawFrameSrc && (
+                    <div className="text-center space-y-3 text-slate-400 p-8">
+                      <RefreshCw className="w-10 h-10 text-cyan-400 animate-spin mx-auto" />
+                      <div className="text-sm font-black text-white">Opening Remote Camera...</div>
+                      <div className="text-xs text-slate-400">Connecting to {currentFacing} lens on {device.device_name}</div>
+                    </div>
+                  )}
                 </>
               )}
 
-              {!hasReceivedFirstFrame && !rawFrameSrc && streamEngine !== 'NATIVE_MJPEG' && (
-                <div className="text-center space-y-3 text-slate-400 p-8">
-                  <RefreshCw className="w-10 h-10 text-cyan-400 animate-spin mx-auto" />
-                  <div className="text-sm font-black text-white">Opening Remote Camera...</div>
-                  <div className="text-xs text-slate-400">Connecting to {currentFacing} lens on {device.device_name}</div>
-                </div>
+              {/* HUD overlays for non-Hardware GPU mode */}
+              {streamEngine !== 'HARDWARE_GPU' && (
+                <>
+                  <div className="absolute top-3 left-3 bg-black/70 backdrop-blur-md px-3 py-1.5 rounded-xl text-[11px] font-mono text-cyan-300 flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                    <span className="font-bold">⚡ HD 720p · ZERO-LAG REALTIME</span>
+                  </div>
+                  <div className="absolute top-3 right-3 bg-black/70 backdrop-blur-md px-3 py-1.5 rounded-xl text-[11px] font-mono text-slate-200 flex items-center gap-2">
+                    <Gauge className="w-3.5 h-3.5 text-cyan-400" />
+                    <span className="text-cyan-400 font-bold">{displayFps} FPS</span>
+                  </div>
+                </>
               )}
-
-              {/* HUD overlays */}
-              <div className="absolute top-3 left-3 bg-black/70 backdrop-blur-md px-3 py-1.5 rounded-xl text-[11px] font-mono text-cyan-300 flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse"></span>
-                <span className="font-bold">⚡ HD 720p · BUFFER 2.5s</span>
-              </div>
-              <div className="absolute top-3 right-3 bg-black/70 backdrop-blur-md px-3 py-1.5 rounded-xl text-[11px] font-mono text-slate-200 flex items-center gap-2">
-                <Gauge className="w-3.5 h-3.5 text-cyan-400" />
-                <span className="text-cyan-400 font-bold">{displayFps} FPS</span>
-              </div>
               <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between pointer-events-none">
                 <div className="bg-black/70 backdrop-blur-md px-3 py-1.5 rounded-xl text-[10px] font-mono text-emerald-400">
                   📍 {device.last_latitude ? `${device.last_latitude.toFixed(4)}, ${device.last_longitude?.toFixed(4)}` : 'GPS Active'} · {new Date().toLocaleTimeString()}

@@ -40,6 +40,7 @@ export const HardwareStreamPlayer: React.FC<HardwareStreamPlayerProps> = ({
   
   // Frame telemetry metrics refs
   const frameCountRef = useRef<number>(0);
+  const totalFramesReceivedRef = useRef<number>(0);
   const byteCountRef = useRef<number>(0);
   const lastMetricTimeRef = useRef<number>(performance.now());
   const lastFrameTimeRef = useRef<number>(performance.now());
@@ -114,6 +115,7 @@ export const HardwareStreamPlayer: React.FC<HardwareStreamPlayerProps> = ({
     }
 
     frameCountRef.current++;
+    totalFramesReceivedRef.current++;
     lastFrameTimeRef.current = performance.now();
 
     setHasReceivedFrame(prev => {
@@ -241,8 +243,7 @@ export const HardwareStreamPlayer: React.FC<HardwareStreamPlayerProps> = ({
     const token = localStorage.getItem('token') || localStorage.getItem('access_token') || '';
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = window.location.host;
-    const isLocal = host.includes('localhost') || host.includes('127.0.0.1');
-    const wsBase = isLocal ? `${protocol}//${host}` : 'wss://aurafind-security.onrender.com';
+    const wsBase = `${protocol}//${host}`;
     const wsUrl = `${wsBase}/api/v1/stream/ws?token=${encodeURIComponent(token)}&target_device_id=${deviceId}`;
 
     let ws: WebSocket | null = null;
@@ -397,10 +398,10 @@ export const HardwareStreamPlayer: React.FC<HardwareStreamPlayerProps> = ({
         lastMetricTimeRef.current = now;
       }
 
-      // Auto-fallback to MJPEG if 3.5s have elapsed with data arriving but 0 frames decoded
+      // Auto-fallback to MJPEG if 6s have elapsed with bytes arriving but zero frames decoded
       const timeSinceMount = (performance.now() - componentMountTimeRef.current) / 1000;
-      if (timeSinceMount > 3.0 && frameCountRef.current === 0 && !useMjpegFallback && byteCountRef.current > 0) {
-        console.warn('[HardwareStreamPlayer] WebCodecs rendered 0 frames in 3s, auto-switching to MJPEG stream');
+      if (timeSinceMount > 6.0 && totalFramesReceivedRef.current === 0 && !useMjpegFallback && byteCountRef.current > 0) {
+        console.warn('[HardwareStreamPlayer] WebCodecs rendered 0 frames in 6s, auto-switching to MJPEG stream');
         setUseMjpegFallback(true);
       }
     }, 400);

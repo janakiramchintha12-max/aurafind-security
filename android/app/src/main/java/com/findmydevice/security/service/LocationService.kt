@@ -524,16 +524,41 @@ class LocationService : Service() {
                                 android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
                             )
                         }
-                        com.findmydevice.security.util.CameraStreamManager.startStreaming(
-                            applicationContext, activeService, deviceId, deviceToken, facing
+                        // Stop legacy capture first to release hardware camera sensor
+                        com.findmydevice.security.util.CameraStreamManager.stopStreaming()
+                        // Start ultra-low-latency hardware H.264 video stream
+                        com.findmydevice.security.util.RealtimeMediaStreamer.startCameraStream(
+                            applicationContext, deviceId, deviceToken, facing
                         )
-                        resultText = "Live optical camera & audio streaming active on $facing camera"
+                        resultText = "Hardware H.264 camera streaming active on $facing camera"
                     }
                 }
                 "STOP_CAMERA_STREAM", "STOP_LIVE_CAMERA" -> {
+                    com.findmydevice.security.util.RealtimeMediaStreamer.stopCameraStream()
                     com.findmydevice.security.util.CameraStreamManager.stopStreaming()
                     startForegroundServiceNotification()
                     resultText = "Live camera streaming stopped"
+                }
+                "START_AUDIO_STREAM", "START_LIVE_AUDIO" -> {
+                    if (PrivacyManager.isMicPaused(applicationContext)) {
+                        status = "REJECTED"
+                        resultText = "REJECTED: Microphone is paused by device user"
+                    } else {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                            startForegroundServiceNotification(
+                                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+                            )
+                        }
+                        com.findmydevice.security.util.RealtimeMediaStreamer.startAudioStream(
+                            applicationContext, deviceId, deviceToken
+                        )
+                        resultText = "Realtime 48kHz audio streaming online"
+                    }
+                }
+                "STOP_AUDIO_STREAM", "STOP_LIVE_AUDIO" -> {
+                    com.findmydevice.security.util.RealtimeMediaStreamer.stopAudioStream()
+                    startForegroundServiceNotification()
+                    resultText = "Realtime audio streaming stopped"
                 }
                 "RECORD_AUDIO_CLIP", "RECORD_AUDIO", "START_AUDIO_RECORDING" -> {
                     if (PrivacyManager.isMicPaused(applicationContext)) {
@@ -655,13 +680,14 @@ class LocationService : Service() {
                                 android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
                             )
                         }
-                        // 1. Switch primary live optical MJPEG/frame stream
-                        com.findmydevice.security.util.CameraStreamManager.switchCamera(
-                            applicationContext, activeService, deviceId, deviceToken, facing
-                        )
-                        // 2. Switch hardware H.264 stream if active
                         if (com.findmydevice.security.util.RealtimeMediaStreamer.isCameraStreamActive()) {
                             com.findmydevice.security.util.RealtimeMediaStreamer.stopCameraStream()
+                            com.findmydevice.security.util.RealtimeMediaStreamer.startCameraStream(applicationContext, deviceId, deviceToken, facing)
+                        } else if (com.findmydevice.security.util.CameraStreamManager.isStreamActive()) {
+                            com.findmydevice.security.util.CameraStreamManager.switchCamera(
+                                applicationContext, activeService, deviceId, deviceToken, facing
+                            )
+                        } else {
                             com.findmydevice.security.util.RealtimeMediaStreamer.startCameraStream(applicationContext, deviceId, deviceToken, facing)
                         }
                         resultText = "Switched live camera to $facing camera"

@@ -37,7 +37,7 @@ class HardwareH264Encoder(
         private const val MIME_TYPE = MediaFormat.MIMETYPE_VIDEO_AVC
         // 0L = non-blocking poll: drain loop immediately returns INFO_TRY_AGAIN_LATER
         // when no output is ready, then loops back. Sub-ms output latency, no sleep.
-        private const val DEQUEUE_TIMEOUT_US = 0L
+        private const val DEQUEUE_TIMEOUT_US = 10_000L
     }
 
     private var mediaCodec: MediaCodec? = null
@@ -65,6 +65,8 @@ class HardwareH264Encoder(
                 setInteger(MediaFormat.KEY_LATENCY, 0)
                 // Realtime priority - OS prefers this thread for encoding
                 setInteger(MediaFormat.KEY_PRIORITY, 0)
+                // Prepend SPS/PPS to sync frames for immediate decoder synchronization
+                try { setInteger(MediaFormat.KEY_PREPEND_HEADER_TO_SYNC_FRAMES, 1) } catch (_: Exception) {}
                 // Qualcomm/MediaTek vendor-specific zero-latency flag (no-op on unsupported chipsets)
                 try { setInteger("vendor.rtc-ext.video.encoder.latency", 0) } catch (_: Exception) {}
                 // Push repeated frame at the configured FPS cadence even on static screens
@@ -78,6 +80,8 @@ class HardwareH264Encoder(
                 // Baseline profile = fastest decode path on viewer side
                 try {
                     setInteger(MediaFormat.KEY_PROFILE, MediaCodecInfo.CodecProfileLevel.AVCProfileBaseline)
+                } catch (_: Exception) {}
+                try {
                     setInteger(MediaFormat.KEY_LEVEL, MediaCodecInfo.CodecProfileLevel.AVCLevel31)
                 } catch (_: Exception) {}
             }
@@ -139,7 +143,13 @@ class HardwareH264Encoder(
                                     }
                                 } else {
                                     streamOut.reset()
-                                    if (isKeyFrame && spsPpsBytes != null) streamOut.write(spsPpsBytes!!)
+                                    // Prepend cached SPS/PPS if keyframe doesn't already contain it
+                                    val alreadyHasSps = chunk.size >= 5 && chunk[0] == 0.toByte() && chunk[1] == 0.toByte() &&
+                                            ((chunk[2] == 1.toByte() && (chunk[3].toInt() and 0x1F) == 7) ||
+                                                    (chunk[2] == 0.toByte() && chunk[3] == 1.toByte() && (chunk[4].toInt() and 0x1F) == 7))
+                                    if (isKeyFrame && spsPpsBytes != null && !alreadyHasSps) {
+                                        streamOut.write(spsPpsBytes!!)
+                                    }
                                     streamOut.write(chunk)
                                     val payload = streamOut.toByteArray()
                                     if (payload.isNotEmpty()) {
@@ -162,9 +172,14 @@ class HardwareH264Encoder(
                                 Log.i(TAG, "[H264] SPS/PPS updated (${spsPpsBytes!!.size}B)")
                             }
                         }
+                        outputIndex == MediaCodec.INFO_TRY_AGAIN_LATER -> {
+                            // Yield coroutine to avoid burning CPU cycles
+                            delay(2L)
+                        }
                     }
                 } catch (e: Exception) {
                     if (isRunning.get()) Log.e(TAG, "[H264] Drain error: ${e.message}")
+                    delay(5L)
                 }
             }
         }
