@@ -41,6 +41,9 @@ class DeviceEnrollmentResponse(BaseModel):
     remote_controls_state: str
 
 class DeviceStatusUpdate(BaseModel):
+    device_name: Optional[str] = None
+    device_model: Optional[str] = None
+    android_version: Optional[str] = None
     battery_pct: Optional[float] = None
     is_charging: Optional[bool] = None
     network_type: Optional[str] = None

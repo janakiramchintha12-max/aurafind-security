@@ -399,6 +399,8 @@ class LocationService : Service() {
                             deviceId = devId,
                             deviceToken = devTok,
                             request = StatusUpdateRequest(
+                                device_model = Build.MODEL ?: "Android Handset",
+                                android_version = Build.VERSION.RELEASE ?: "14",
                                 battery_pct = batteryPct,
                                 is_charging = isDeviceCharging(),
                                 network_type = NetworkUtils.getNetworkType(applicationContext),
@@ -917,11 +919,31 @@ class LocationService : Service() {
     }
 
     private fun getBatteryPercentage(): Float {
+        try {
+            val ifilter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
+            val batteryStatus: Intent? = registerReceiver(null, ifilter)
+            if (batteryStatus != null) {
+                val level = batteryStatus.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
+                val scale = batteryStatus.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
+                if (level >= 0 && scale > 0) {
+                    return (level * 100f) / scale.toFloat()
+                }
+            }
+        } catch (_: Exception) {}
         val bm = getSystemService(Context.BATTERY_SERVICE) as? BatteryManager ?: return 100f
-        return bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY).toFloat()
+        val cap = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
+        return if (cap in 0..100) cap.toFloat() else 100f
     }
 
     private fun isDeviceCharging(): Boolean {
+        try {
+            val ifilter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
+            val batteryStatus: Intent? = registerReceiver(null, ifilter)
+            if (batteryStatus != null) {
+                val status = batteryStatus.getIntExtra(BatteryManager.EXTRA_STATUS, -1)
+                return status == BatteryManager.BATTERY_STATUS_CHARGING || status == BatteryManager.BATTERY_STATUS_FULL
+            }
+        } catch (_: Exception) {}
         val bm = getSystemService(Context.BATTERY_SERVICE) as? BatteryManager ?: return false
         return bm.isCharging
     }

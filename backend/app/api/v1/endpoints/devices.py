@@ -195,6 +195,7 @@ async def update_device_status(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Device enrollment has been revoked")
 
     ALLOWED_STATUS_FIELDS = {
+        "device_model", "android_version",
         "battery_pct", "is_charging", "network_type", "wifi_status",
         "sim_status", "sim_number", "gps_status", "permission_status",
         "tracking_mode", "is_tracking_enabled", "is_lost_mode", "lost_mode_message",
