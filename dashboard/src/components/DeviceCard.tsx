@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Smartphone, Battery, BatteryCharging, Wifi, WifiOff, Radio, MapPin, Bell, BellOff, RefreshCw, ChevronRight, Lock, AlertTriangle, Camera, Phone, Shield, FileText, Edit3, Save, X, Tv, QrCode } from 'lucide-react';
+import { Smartphone, Battery, BatteryCharging, Wifi, WifiOff, Radio, MapPin, Bell, BellOff, RefreshCw, ChevronRight, Lock, AlertTriangle, Camera, Phone, Shield, FileText, Edit3, Save, X, Tv, QrCode, CheckCircle2, Zap, MessageSquare } from 'lucide-react';
 import { Device } from '../types';
-import { devicesApi } from '../services/api';
+import { devicesApi, commandsApi } from '../services/api';
 
 interface DeviceCardProps {
   device: Device;
@@ -29,6 +29,79 @@ export const DeviceCard: React.FC<DeviceCardProps> = ({ device, onLocate, onRing
   const [editModel, setEditModel] = useState(device.device_model || '');
   const [editSimNumber, setEditSimNumber] = useState(device.sim_number || '');
   const [isSaving, setIsSaving] = useState(false);
+  const [isWakingUp, setIsWakingUp] = useState(false);
+  const [copiedSms, setCopiedSms] = useState(false);
+  const [wakeupMsg, setWakeupMsg] = useState<string | null>(null);
+
+  const parseUtc = (dtStr?: string | null) => {
+    if (!dtStr) return Infinity;
+    const clean = dtStr.endsWith('Z') || dtStr.includes('+') ? dtStr : dtStr + 'Z';
+    const parsed = new Date(clean).getTime();
+    return isNaN(parsed) ? Infinity : Date.now() - parsed;
+  };
+
+  const lastSyncMs = parseUtc(device.last_heartbeat || device.last_sync_time);
+  const minutesSinceSync = Math.round(lastSyncMs / 60000);
+  const offlineTimeStr = minutesSinceSync > 1440
+    ? `${Math.round(minutesSinceSync / 1440)}d ago`
+    : minutesSinceSync > 60
+    ? `${Math.round(minutesSinceSync / 60)}h ago`
+    : minutesSinceSync > 0
+    ? `${minutesSinceSync}m ago`
+    : 'Just now';
+
+  const getOfflineReason = () => {
+    if (device.battery_pct !== null && device.battery_pct !== undefined && device.battery_pct <= 10) {
+      return {
+        title: `Battery Critical / Depleted (${Math.round(device.battery_pct)}%)`,
+        description: `Handset reported low battery (${Math.round(device.battery_pct)}%) before disconnecting. The phone likely shut down or Android power saver killed background radios.`,
+        steps: [
+          'Connect the phone to a charger and power it on.',
+          'Once power is restored, AuraFind will automatically reconnect.'
+        ]
+      };
+    }
+
+    if (!device.wifi_status && (device.network_type === 'NONE' || device.network_type === 'UNKNOWN' || !device.network_type)) {
+      return {
+        title: 'Network Disconnected (No Wi-Fi / Mobile Data)',
+        description: 'The phone lost connection to Wi-Fi and Cellular data, or Airplane mode was enabled.',
+        steps: [
+          'Verify Wi-Fi or Mobile Data is turned ON on the phone.',
+          'Ensure Airplane mode is turned OFF.',
+          device.sim_number ? 'Send the SMS Wakeup command to force GPS tracking via cellular SMS.' : 'Insert an active SIM card for SMS tracking backup.'
+        ]
+      };
+    }
+
+    return {
+      title: 'Android Doze Mode / Background Sleep',
+      description: `Android battery optimizer put the background tracking service to sleep while the phone was idle (${offlineTimeStr}).`,
+      steps: [
+        'Click "Send Wakeup Ping" below to dispatch an urgent wake command.',
+        'On the phone: Open AuraFind -> Tap "Keep Online 24/7" (or Android Settings -> Apps -> AuraFind -> Battery -> choose "Unrestricted").',
+        'Enable "Autostart" in your phone\'s security/app manager settings.'
+      ]
+    };
+  };
+
+  const offlineReason = getOfflineReason();
+
+  const handleWakeupDevice = async (id: string) => {
+    setIsWakingUp(true);
+    try {
+      await commandsApi.dispatch(id, 'LOCATE_NOW');
+      await commandsApi.dispatch(id, 'HIGH_ACCURACY_MODE');
+      setWakeupMsg('Wakeup signal sent! Device will sync when signal reaches handset.');
+      setTimeout(() => setWakeupMsg(null), 4000);
+      if (onSync) onSync(id);
+    } catch (e) {
+      setWakeupMsg('Failed to send wakeup command');
+      setTimeout(() => setWakeupMsg(null), 4000);
+    } finally {
+      setIsWakingUp(false);
+    }
+  };
 
   const handleSaveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -192,12 +265,89 @@ export const DeviceCard: React.FC<DeviceCardProps> = ({ device, onLocate, onRing
         </div>
         <div className="flex items-center justify-between">
           <span>Live Telemetry Sync:</span>
-          <span className="font-mono text-emerald-400 font-bold flex items-center gap-1">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
-            <span>Live Active</span>
-          </span>
+          {isOnline ? (
+            <span className="font-mono text-emerald-400 font-bold flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
+              <span>Live Active</span>
+            </span>
+          ) : (
+            <span className="font-mono text-rose-400 font-bold flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
+              <span>Offline ({offlineTimeStr})</span>
+            </span>
+          )}
         </div>
       </div>
+
+      {/* Offline Root-Cause Diagnosis & Fix Guide */}
+      {!isOnline && (
+        <div className="my-3 bg-amber-950/25 border border-amber-500/30 rounded-xl p-3 space-y-2.5">
+          <div className="flex items-start justify-between">
+            <div className="flex items-center space-x-2 text-amber-400 font-bold text-xs">
+              <AlertTriangle className="w-4 h-4 shrink-0 text-amber-400" />
+              <span>Why is this device offline?</span>
+            </div>
+            <span className="text-[10px] px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 font-mono">
+              {offlineTimeStr}
+            </span>
+          </div>
+
+          {/* Primary Diagnosed Cause */}
+          <div className="text-xs text-slate-300 leading-relaxed bg-slate-900/90 p-2.5 rounded-lg border border-slate-800 space-y-1">
+            <div className="text-[11px] font-bold text-amber-300 flex items-center gap-1">
+              <span>Cause:</span>
+              <span className="text-white">{offlineReason.title}</span>
+            </div>
+            <p className="text-[11px] text-slate-400">{offlineReason.description}</p>
+          </div>
+
+          {/* How to Make It Online (Actionable Solutions) */}
+          <div className="space-y-1 text-[11px]">
+            <div className="font-bold text-cyan-400 flex items-center gap-1">
+              <CheckCircle2 className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+              <span>How to make it online:</span>
+            </div>
+            <ul className="text-slate-300 space-y-1 list-disc list-inside pl-1 text-[11px]">
+              {offlineReason.steps.map((step, idx) => (
+                <li key={idx}>{step}</li>
+              ))}
+            </ul>
+          </div>
+
+          {/* Action Buttons: 1-Click Wakeup & SMS Wakeup */}
+          <div className="pt-1 flex items-center gap-2">
+            <button
+              onClick={() => handleWakeupDevice(device.id)}
+              disabled={isWakingUp}
+              className="flex-1 py-1.5 px-3 bg-cyan-600/80 hover:bg-cyan-500 disabled:opacity-50 text-white rounded-lg font-bold text-[11px] flex items-center justify-center gap-1.5 transition-all shadow-md shadow-cyan-600/20 cursor-pointer"
+            >
+              <Zap className="w-3.5 h-3.5 text-amber-300" />
+              <span>{isWakingUp ? 'Sending Wakeup...' : 'Send Wakeup Ping'}</span>
+            </button>
+
+            {device.sim_number && (
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText('#AURAFIND LOCATE');
+                  setCopiedSms(true);
+                  setTimeout(() => setCopiedSms(false), 2000);
+                }}
+                className="py-1.5 px-3 bg-purple-900/60 hover:bg-purple-800 border border-purple-600/40 text-purple-200 rounded-lg font-semibold text-[11px] flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                title="Copy emergency SMS to wake up device without internet"
+              >
+                <MessageSquare className="w-3.5 h-3.5 text-purple-300" />
+                <span>{copiedSms ? 'SMS Copied!' : 'SMS Wakeup'}</span>
+              </button>
+            )}
+          </div>
+
+          {wakeupMsg && (
+            <div className="text-[10px] text-cyan-300 font-mono bg-cyan-950/60 p-1.5 rounded border border-cyan-800/40 text-center">
+              {wakeupMsg}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Privacy & Consent Status Strip */}
       <div className="my-3 px-3 py-2 bg-slate-900/90 border border-slate-700/80 rounded-xl space-y-1.5">

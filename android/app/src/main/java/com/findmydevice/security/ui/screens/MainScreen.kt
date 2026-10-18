@@ -533,6 +533,92 @@ fun MainScreen() {
                         }
                     }
 
+                    // 2.5. 24/7 BACKGROUND KEEP-ALIVE (BATTERY OPTIMIZATION EXEMPTION)
+                    item {
+                        val pm = remember { context.getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager }
+                        val isBatteryIgnored = remember {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                                pm?.isIgnoringBatteryOptimizations(context.packageName) == true
+                            } else true
+                        }
+
+                        if (!isBatteryIgnored && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1708)),
+                                shape = RoundedCornerShape(16.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .border(1.dp, Color(0xFFF59E0B).copy(alpha = 0.6f), RoundedCornerShape(16.dp))
+                                    .clickable {
+                                        try {
+                                            val intent = Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                                                data = Uri.parse("package:${context.packageName}")
+                                            }
+                                            context.startActivity(intent)
+                                        } catch (e: Exception) {
+                                            try {
+                                                val intent = Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                                                context.startActivity(intent)
+                                            } catch (_: Exception) {}
+                                        }
+                                    }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(14.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("⚡", fontSize = 24.sp)
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            "KEEP ONLINE 24/7 (ACTION REQUIRED)",
+                                            color = Color(0xFFF59E0B),
+                                            fontWeight = FontWeight.Black,
+                                            fontSize = 12.sp,
+                                            letterSpacing = 0.5.sp
+                                        )
+                                        Text(
+                                            "Tap to exempt AuraFind from Android Doze sleep mode so it stays online 24/7 when locked.",
+                                            color = Color(0xFFCBD5E1),
+                                            fontSize = 11.sp,
+                                            lineHeight = 15.sp
+                                        )
+                                    }
+                                    Text("➔", color = Color(0xFFF59E0B), fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        } else {
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFF06281E)),
+                                shape = RoundedCornerShape(16.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .border(1.dp, Color(0xFF10B981).copy(alpha = 0.4f), RoundedCornerShape(16.dp))
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("🛡️", fontSize = 20.sp)
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Column {
+                                        Text(
+                                            "24/7 BACKGROUND PROTECTION ACTIVE",
+                                            color = Color(0xFF10B981),
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 11.sp
+                                        )
+                                        Text(
+                                            "Battery saver exempted. Handset stays online continuously.",
+                                            color = Color(0xFF94A3B8),
+                                            fontSize = 10.sp
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     // 3. Cyber Diagnostic Grid (GPS, Network, Battery, Stealth)
                     item {
                         Card(
