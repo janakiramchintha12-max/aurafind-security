@@ -186,6 +186,22 @@ object RealtimeMediaStreamer {
                 frameRate = 30, bitRate = 2_000_000, iFrameIntervalSeconds = 2
             ) { nalBytes, _, timestampUs -> sendBinaryPacket(PKT_VIDEO, SRC_SCREEN, timestampUs, nalBytes) }
             val encoderSurface = screenEncoder?.start() ?: run { stopScreenMirrorStream(); return }
+
+            // If VirtualDisplay is already active from previous session, reuse it without prompting user!
+            if (screenVirtualDisplay != null && screenMediaProjection != null) {
+                try {
+                    screenVirtualDisplay?.setSurface(encoderSurface)
+                    isScreenMirroring.set(true)
+                    screenEncoder?.requestSyncFrame()
+                    Log.i(TAG, "[Screen] Reused existing VirtualDisplay without permission prompt: ${encWidth}x${encHeight}")
+                    return
+                } catch (re: Exception) {
+                    Log.w(TAG, "[Screen] Failed to reuse VirtualDisplay surface: ${re.message}")
+                    try { screenVirtualDisplay?.release() } catch (_: Exception) {}
+                    screenVirtualDisplay = null
+                }
+            }
+
             if (screenMediaProjection == null && cachedProjectionResultData != null) {
                 try {
                     val pm = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
@@ -193,6 +209,8 @@ object RealtimeMediaStreamer {
                     screenMediaProjection?.registerCallback(object : MediaProjection.Callback() {
                         override fun onStop() {
                             Log.w(TAG, "[Screen] MediaProjection onStop callback triggered")
+                            try { screenVirtualDisplay?.release() } catch (_: Exception) {}
+                            screenVirtualDisplay = null
                             screenMediaProjection = null
                             stopScreenMirrorStream()
                         }
@@ -209,6 +227,7 @@ object RealtimeMediaStreamer {
                     return
                 }
             }
+
             try {
                 screenVirtualDisplay = screenMediaProjection?.createVirtualDisplay(
                     "AuraFindScreenHW", encWidth, encHeight, metrics.densityDpi,
@@ -222,6 +241,8 @@ object RealtimeMediaStreamer {
             } catch (vde: Exception) {
                 Log.w(TAG, "[Screen] VirtualDisplay creation error, requesting fresh token: ${vde.message}")
                 cachedProjectionResultData = null
+                try { screenVirtualDisplay?.release() } catch (_: Exception) {}
+                screenVirtualDisplay = null
                 screenMediaProjection = null
                 context.startActivity(
                     Intent(context, com.findmydevice.security.ui.ScreenCapturePermissionActivity::class.java)
@@ -236,6 +257,7 @@ object RealtimeMediaStreamer {
                 return
             }
             isScreenMirroring.set(true)
+            screenEncoder?.requestSyncFrame()
             Log.i(TAG, "[Screen] HW mirror active: ${encWidth}x${encHeight} @ 30fps, 2Mbps CBR")
         } catch (e: Exception) {
             Log.e(TAG, "[Screen] Start error: ${e.message}", e); stopScreenMirrorStream()
@@ -244,12 +266,10 @@ object RealtimeMediaStreamer {
 
     fun stopScreenMirrorStream() {
         isScreenMirroring.set(false)
-        try { screenVirtualDisplay?.release() } catch (_: Exception) {}
-        screenVirtualDisplay = null
-        screenEncoder?.stop(); screenEncoder = null
-        try { screenMediaProjection?.stop() } catch (_: Exception) {}
-        screenMediaProjection = null
-        stopScreenBgThread()
+        try { screenVirtualDisplay?.setSurface(null) } catch (_: Exception) {}
+        screenEncoder?.stop()
+        screenEncoder = null
+        // Retain screenVirtualDisplay & screenMediaProjection so subsequent shares start instantly without prompting
     }
 
     private fun startScreenBgThread() {

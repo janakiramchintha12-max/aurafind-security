@@ -51,7 +51,13 @@ class ScreenCapturePermissionActivity : ComponentActivity() {
 
         val mgr = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as? MediaProjectionManager
         if (mgr != null) {
-            captureLauncher.launch(mgr.createScreenCaptureIntent())
+            val captureIntent = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                val config = android.media.projection.MediaProjectionConfig.createConfigForDefaultDisplay()
+                mgr.createScreenCaptureIntent(config)
+            } else {
+                mgr.createScreenCaptureIntent()
+            }
+            captureLauncher.launch(captureIntent)
         } else {
             finish()
         }
