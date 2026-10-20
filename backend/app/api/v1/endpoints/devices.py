@@ -17,6 +17,7 @@ from app.schemas.device import (
 )
 from app.api.v1.deps import get_current_user, verify_device_ownership, log_audit
 from app.services.websocket_manager import manager
+from app.services.registry_sync import sync_device_to_registry, remove_device_from_registry
 
 router = APIRouter()
 
@@ -63,6 +64,7 @@ def register_device(
     db.add(device)
     db.commit()
     db.refresh(device)
+    sync_device_to_registry(device)
 
     log_audit(db, user_id=current_user.id, device_id=device.id, action="DEVICE_REGISTERED", resource=f"device:{device.id}")
     return device
@@ -156,6 +158,7 @@ def delete_device(
     db.query(AuditLog).filter(AuditLog.device_id == device.id).delete(synchronize_session=False)
 
     log_audit(db, user_id=device.user_id, device_id=device.id, action="DEVICE_REMOVED", resource=f"device:{device.id}")
+    remove_device_from_registry(device.id)
     db.delete(device)
     db.commit()
 
@@ -211,6 +214,7 @@ async def update_device_status(
     device.status = "ONLINE"
     db.commit()
     db.refresh(device)
+    sync_device_to_registry(device)
 
     # Broadcast update to user dashboard websocket
     await manager.send_to_user(device.user_id, {
@@ -465,6 +469,7 @@ def auto_pair_device(
 
     db.commit()
     db.refresh(device)
+    sync_device_to_registry(device)
 
     log_audit(db, user_id=user.id, device_id=device.id, action="DEVICE_AUTO_PAIRED", resource=f"device:{device.id}",
               details=f"Device '{device.device_name}' auto-paired with user '{user.email}'")

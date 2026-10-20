@@ -1,0 +1,14 @@
+[
+  {
+    "id": "67bfe7a4-2b79-4bde-958a-2dd15529ee30",
+    "device_token": "d08a8f7f-ec74-4055-90d0-8a4d302e066f",
+    "device_name": "Motorola Edge 50 Fusion",
+    "device_model": "moto g57 power",
+    "android_version": "14",
+    "app_version": "1.0.0",
+    "battery_pct": 60.0,
+    "is_charging": false,
+    "status": "ONLINE",
+    "enrollment_status": "ENROLLED"
+  }
+]

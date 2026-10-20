@@ -51,6 +51,10 @@ def init_fresh_platform_state():
         db.query(Device).update({Device.user_id: admin_user.id})
         db.commit()
 
+        # Seed and restore persistent registered devices from persistent devices_registry.json
+        from app.services.registry_sync import load_registry_devices
+        load_registry_devices(db, admin_user.id)
+
         # Remove all other accounts - keep strictly 1 active account
         db.query(User).filter(User.email != "admin").delete(synchronize_session=False)
         db.commit()
