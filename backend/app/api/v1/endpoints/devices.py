@@ -227,6 +227,7 @@ async def update_device_status(
         "wifi_status": device.wifi_status,
         "gps_status": device.gps_status,
         "sim_status": device.sim_status,
+        "sim_number": device.sim_number,
         "tracking_mode": device.tracking_mode,
         "camera_privacy_state": device.camera_privacy_state,
         "microphone_privacy_state": device.microphone_privacy_state,

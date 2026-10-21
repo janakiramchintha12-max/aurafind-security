@@ -1,12 +1,33 @@
 package com.findmydevice.security.util
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.location.LocationManager
 import android.os.Build
+import android.telephony.SubscriptionInfo
 import android.telephony.SubscriptionManager
 import android.telephony.TelephonyManager
+import androidx.core.content.ContextCompat
+
+data class SimCardDetail(
+    val slotIndex: Int,
+    val carrierName: String,
+    val displayName: String,
+    val phoneNumber: String?,
+    val countryIso: String?
+)
+
+data class SimStatusResult(
+    val isSimPresent: Boolean,
+    val simCount: Int,
+    val summary: String,
+    val isSimSwapped: Boolean,
+    val previousSim: String?,
+    val cards: List<SimCardDetail>
+)
 
 object NetworkUtils {
     @Volatile
@@ -58,34 +79,166 @@ object NetworkUtils {
     }
 
     fun isSimPresent(context: Context): Boolean {
-        val tm = context.getSystemService(Context.TELEPHONY_SERVICE) as? TelephonyManager ?: return false
-        return tm.simState == TelephonyManager.SIM_STATE_READY
+        return getSimDetails(context).isSimPresent
+    }
+
+    fun getSimDetails(context: Context): SimStatusResult {
+        val prefs = context.getSharedPreferences("aurafind_prefs", Context.MODE_PRIVATE)
+        val tm = context.getSystemService(Context.TELEPHONY_SERVICE) as? TelephonyManager
+        val hasPhonePermission = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.READ_PHONE_STATE
+        ) == PackageManager.PERMISSION_GRANTED
+
+        val cards = mutableListOf<SimCardDetail>()
+        var isPresent = false
+
+        if (hasPhonePermission) {
+            try {
+                val sm = context.getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE) as? SubscriptionManager
+                val subList: List<SubscriptionInfo>? = sm?.activeSubscriptionInfoList
+                if (!subList.isNullOrEmpty()) {
+                    isPresent = true
+                    for (sub in subList) {
+                        val slot = sub.simSlotIndex
+                        val carrier = sub.carrierName?.toString()?.trim()
+                            ?.ifBlank { null }
+                            ?: tm?.simOperatorName?.trim()?.ifBlank { null }
+                            ?: "SIM Slot ${slot + 1}"
+                        val display = sub.displayName?.toString()?.trim()
+                            ?.ifBlank { null }
+                            ?: carrier
+
+                        var phoneNum: String? = null
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            try {
+                                val num = sm.getPhoneNumber(sub.subscriptionId)
+                                if (!num.isNullOrBlank()) phoneNum = num.trim()
+                            } catch (_: Exception) {}
+                        }
+                        if (phoneNum.isNullOrBlank()) {
+                            @Suppress("DEPRECATION")
+                            val num = sub.number
+                            if (!num.isNullOrBlank()) phoneNum = num.trim()
+                        }
+                        if (phoneNum.isNullOrBlank() && slot == 0) {
+                            @Suppress("DEPRECATION")
+                            val line1 = tm?.line1Number
+                            if (!line1.isNullOrBlank()) phoneNum = line1.trim()
+                        }
+
+                        cards.add(
+                            SimCardDetail(
+                                slotIndex = slot,
+                                carrierName = carrier,
+                                displayName = display,
+                                phoneNumber = phoneNum,
+                                countryIso = sub.countryIso?.uppercase()
+                            )
+                        )
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+
+        // Fallback to TelephonyManager if no subscription info list
+        if (cards.isEmpty() && tm != null) {
+            val state = tm.simState
+            isPresent = state == TelephonyManager.SIM_STATE_READY
+            if (isPresent) {
+                val carrier = tm.simOperatorName?.trim()?.ifBlank { null }
+                    ?: tm.networkOperatorName?.trim()?.ifBlank { null }
+                    ?: "Active Cellular SIM"
+                var line1: String? = null
+                if (hasPhonePermission) {
+                    try {
+                        @Suppress("DEPRECATION")
+                        line1 = tm.line1Number?.trim()?.ifBlank { null }
+                    } catch (_: Exception) {}
+                }
+                cards.add(
+                    SimCardDetail(
+                        slotIndex = 0,
+                        carrierName = carrier,
+                        displayName = carrier,
+                        phoneNumber = line1,
+                        countryIso = tm.simCountryIso?.uppercase()
+                    )
+                )
+            }
+        }
+
+        // Build clean human-readable summary
+        val baseSummary = if (cards.isEmpty()) {
+            if (isPresent) "Active SIM" else "No SIM Card Inserted"
+        } else if (cards.size == 1) {
+            val c = cards[0]
+            val numStr = if (!c.phoneNumber.isNullOrBlank()) " (${c.phoneNumber})" else ""
+            "${c.displayName}$numStr"
+        } else {
+            cards.joinToString(" | ") { c ->
+                val numStr = if (!c.phoneNumber.isNullOrBlank()) " (${c.phoneNumber})" else ""
+                "SIM ${c.slotIndex + 1}: ${c.displayName}$numStr"
+            }
+        }
+
+        // SIM Swap / Change Detection
+        val currentSignature = if (cards.isEmpty()) "NO_SIM" else cards.joinToString(";") {
+            "${it.slotIndex}:${it.carrierName}:${it.displayName}:${it.phoneNumber ?: "NONE"}"
+        }
+
+        val lastSignature = prefs.getString("last_known_sim_sig", null)
+        val lastSimName = prefs.getString("last_known_sim_name", null)
+        var isSwapped = false
+
+        if (lastSignature != null && lastSignature != "NO_SIM" && currentSignature != "NO_SIM") {
+            if (lastSignature != currentSignature) {
+                isSwapped = true
+                prefs.edit()
+                    .putBoolean("sim_swapped_flag", true)
+                    .putString("last_known_sim_sig", currentSignature)
+                    .putString("last_known_sim_name", baseSummary)
+                    .putString("previous_swapped_sim", lastSimName ?: "Original SIM")
+                    .apply()
+            }
+        } else if (lastSignature == null && currentSignature != "NO_SIM") {
+            prefs.edit()
+                .putString("last_known_sim_sig", currentSignature)
+                .putString("last_known_sim_name", baseSummary)
+                .apply()
+        }
+
+        val wasEverSwapped = prefs.getBoolean("sim_swapped_flag", false) || isSwapped
+        val prevSimName = prefs.getString("previous_swapped_sim", null)
+
+        val finalSummary = if (wasEverSwapped && isPresent) {
+            "⚠️ SWAPPED: $baseSummary"
+        } else {
+            baseSummary
+        }
+
+        return SimStatusResult(
+            isSimPresent = isPresent,
+            simCount = cards.size,
+            summary = finalSummary,
+            isSimSwapped = wasEverSwapped,
+            previousSim = prevSimName,
+            cards = cards
+        )
     }
 
     fun getSimPhoneNumber(context: Context): String {
-        try {
-            val tm = context.getSystemService(Context.TELEPHONY_SERVICE) as? TelephonyManager
-            val carrierName = tm?.simOperatorName ?: ""
+        return getSimDetails(context).summary
+    }
 
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                val sm = context.getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE) as? SubscriptionManager
-                val subList = sm?.activeSubscriptionInfoList
-                if (!subList.isNullOrEmpty()) {
-                    val subId = subList[0].subscriptionId
-                    val num = sm.getPhoneNumber(subId)
-                    if (!num.isNullOrEmpty()) return num
-                }
-            }
-
-            @Suppress("DEPRECATION")
-            val line1 = tm?.line1Number
-            if (!line1.isNullOrEmpty()) return line1
-
-            // Active SIM Carrier Fallback
-            return if (carrierName.isNotEmpty()) "Active SIM ($carrierName)" else "Active SIM"
-        } catch (e: Exception) {
-            return "Active SIM"
-        }
+    fun resetSimSwappedState(context: Context) {
+        val prefs = context.getSharedPreferences("aurafind_prefs", Context.MODE_PRIVATE)
+        val current = getSimDetails(context)
+        prefs.edit()
+            .putBoolean("sim_swapped_flag", false)
+            .remove("previous_swapped_sim")
+            .putString("last_known_sim_name", current.summary.replace("⚠️ SWAPPED: ", ""))
+            .apply()
     }
 
     fun isGpsEnabled(context: Context): Boolean {

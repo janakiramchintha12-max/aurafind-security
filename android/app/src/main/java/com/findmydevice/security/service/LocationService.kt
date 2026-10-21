@@ -78,6 +78,46 @@ class LocationService : Service() {
         }
     }
 
+    // Instant SIM swap & SIM state change listener
+    private val simStateReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            Log.i(TAG, "SIM card state event: ${intent?.action}")
+            val simDetails = NetworkUtils.getSimDetails(applicationContext)
+            serviceScope.launch {
+                try {
+                    val prefs = applicationContext.getSharedPreferences("aurafind_prefs", Context.MODE_PRIVATE)
+                    val devId = prefs.getString("device_id", null) ?: PERMANENT_DEVICE_ID
+                    val devTok = prefs.getString("device_token", null) ?: PERMANENT_DEVICE_TOKEN
+                    val currentService = apiService ?: setupActiveApiService()
+                    currentService.updateDeviceStatus(
+                        deviceId = devId,
+                        deviceToken = devTok,
+                        request = StatusUpdateRequest(
+                            device_model = Build.MODEL ?: "Android Handset",
+                            android_version = Build.VERSION.RELEASE ?: "14",
+                            battery_pct = getBatteryPercentage(),
+                            is_charging = isDeviceCharging(),
+                            network_type = NetworkUtils.getNetworkType(applicationContext),
+                            wifi_status = NetworkUtils.isWifiConnected(applicationContext),
+                            sim_status = simDetails.isSimPresent,
+                            sim_number = simDetails.summary,
+                            gps_status = NetworkUtils.isGpsEnabled(applicationContext),
+                            tracking_mode = trackingMode,
+                            camera_privacy_state = PrivacyManager.getCameraState(applicationContext),
+                            microphone_privacy_state = PrivacyManager.getMicState(applicationContext),
+                            location_privacy_state = PrivacyManager.getLocationState(applicationContext),
+                            speaker_privacy_state = PrivacyManager.getSpeakerState(applicationContext),
+                            remote_controls_state = PrivacyManager.getControlsState(applicationContext)
+                        )
+                    )
+                    Log.i(TAG, "SIM status synced to cloud: ${simDetails.summary}")
+                } catch (e: Exception) {
+                    Log.w(TAG, "SIM sync ping error: ${e.message}")
+                }
+            }
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
 
@@ -98,6 +138,18 @@ class LocationService : Service() {
             addAction(Intent.ACTION_USER_PRESENT)
         }
         registerReceiver(screenStateReceiver, filter)
+
+        val simFilter = IntentFilter().apply {
+            addAction("android.intent.action.SIM_STATE_CHANGED")
+            addAction("android.telephony.action.SIM_CARD_STATE_CHANGED")
+            addAction("android.telephony.action.SIM_APPLICATION_STATE_CHANGED")
+            addAction(Intent.ACTION_AIRPLANE_MODE_CHANGED)
+        }
+        try {
+            registerReceiver(simStateReceiver, simFilter)
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to register simStateReceiver: ${e.message}")
+        }
     }
 
     private fun acquireWakeLock() {
@@ -958,6 +1010,7 @@ class LocationService : Service() {
         try { controlWebSocket?.close(1000, "Service stopped") } catch (_: Exception) {}
         controlWebSocket = null
         try { unregisterReceiver(screenStateReceiver) } catch (e: Exception) {}
+        try { unregisterReceiver(simStateReceiver) } catch (e: Exception) {}
     }
 
 

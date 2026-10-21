@@ -32,6 +32,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.findmydevice.security.data.network.ApiService
 import com.findmydevice.security.data.network.AutoPairRequest
+import com.findmydevice.security.data.network.StatusUpdateRequest
+import com.findmydevice.security.util.PrivacyManager
 import com.findmydevice.security.service.LocationService
 import com.findmydevice.security.util.AudioAlarmManager
 import com.findmydevice.security.util.NetworkUtils
@@ -71,6 +73,39 @@ fun MainScreen() {
     val networkType = NetworkUtils.getNetworkType(context)
     val isGpsEnabled = NetworkUtils.isGpsEnabled(context)
     val isSimPresent = NetworkUtils.isSimPresent(context)
+    var isLocationPaused by remember { mutableStateOf(PrivacyManager.isLocationPaused(context)) }
+    var simDetails by remember { mutableStateOf(NetworkUtils.getSimDetails(context)) }
+
+    fun triggerQuickStatusSync() {
+        coroutineScope.launch(Dispatchers.IO) {
+            try {
+                val okHttp = okhttp3.OkHttpClient.Builder()
+                    .connectTimeout(5, java.util.concurrent.TimeUnit.SECONDS)
+                    .build()
+                val targetUrl = NetworkUtils.BASE_URL
+                val retrofit = Retrofit.Builder()
+                    .baseUrl(targetUrl)
+                    .client(okHttp)
+                    .addConverterFactory(GsonConverterFactory.create())
+                    .build()
+                val api = retrofit.create(ApiService::class.java)
+                val devId = prefs.getString("device_id", null) ?: "67bfe7a4-2b79-4bde-958a-2dd15529ee30"
+                val devTok = prefs.getString("device_token", null) ?: "d08a8f7f-ec74-4055-90d0-8a4d302e066f"
+                val currentSim = NetworkUtils.getSimDetails(context)
+                api.updateDeviceStatus(
+                    deviceId = devId,
+                    deviceToken = devTok,
+                    request = StatusUpdateRequest(
+                        device_model = Build.MODEL ?: "Android Handset",
+                        android_version = Build.VERSION.RELEASE ?: "14",
+                        sim_status = currentSim.isSimPresent,
+                        sim_number = currentSim.summary,
+                        location_privacy_state = PrivacyManager.getLocationState(context)
+                    )
+                )
+            } catch (_: Exception) {}
+        }
+    }
 
     // Animated radar pulse
     val infiniteTransition = rememberInfiniteTransition(label = "RadarPulse")
@@ -449,6 +484,245 @@ fun MainScreen() {
                                             textAlign = TextAlign.Center,
                                             modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
                                         )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // 1.5. MOBILE LOCATION ON/OFF CONTROL SWITCH
+                    item {
+                        Card(
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (!isLocationPaused) Color(0xFF06281E) else Color(0xFF2D1212)
+                            ),
+                            shape = RoundedCornerShape(20.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .border(
+                                    1.5.dp,
+                                    if (!isLocationPaused) Color(0xFF10B981) else Color(0xFFEF4444),
+                                    RoundedCornerShape(20.dp)
+                                )
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(18.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    modifier = Modifier.weight(1f),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(14.dp)
+                                ) {
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = if (!isLocationPaused) Color(0xFF10B981).copy(alpha = 0.2f) else Color(0xFFEF4444).copy(alpha = 0.2f),
+                                        modifier = Modifier.size(46.dp)
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Text(if (!isLocationPaused) "📍" else "🛑", fontSize = 22.sp)
+                                        }
+                                    }
+                                    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                            Text(
+                                                "HANDSET LOCATION ACCESS",
+                                                color = Color.White,
+                                                fontWeight = FontWeight.Black,
+                                                fontSize = 13.sp,
+                                                letterSpacing = 0.5.sp
+                                            )
+                                        }
+                                        Surface(
+                                            color = if (!isLocationPaused) Color(0xFF10B981).copy(alpha = 0.2f) else Color(0xFFEF4444).copy(alpha = 0.2f),
+                                            shape = RoundedCornerShape(6.dp)
+                                        ) {
+                                            Text(
+                                                if (!isLocationPaused) "● TRACKING ACTIVE (ONLINE)" else "■ TRACKING PAUSED (OFFLINE)",
+                                                color = if (!isLocationPaused) Color(0xFF10B981) else Color(0xFFEF4444),
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Black,
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                            )
+                                        }
+                                        Text(
+                                            if (!isLocationPaused)
+                                                "Transmitting live satellite GPS coordinates to cloud dashboard."
+                                            else
+                                                "Location paused by you. Dashboard cannot track this phone until you turn this on.",
+                                            color = Color(0xFF94A3B8),
+                                            fontSize = 11.sp,
+                                            lineHeight = 15.sp
+                                        )
+                                    }
+                                }
+                                Switch(
+                                    checked = !isLocationPaused,
+                                    onCheckedChange = { isChecked ->
+                                        val willPause = !isChecked
+                                        isLocationPaused = willPause
+                                        PrivacyManager.setLocationPaused(context, willPause, null, savedDeviceId, savedDeviceToken)
+                                        statusMessage = if (willPause) "Location sharing PAUSED on handset" else "Location sharing ACTIVE on handset"
+                                        triggerQuickStatusSync()
+                                    },
+                                    colors = SwitchDefaults.colors(
+                                        checkedThumbColor = Color.White,
+                                        checkedTrackColor = Color(0xFF10B981),
+                                        uncheckedThumbColor = Color.White,
+                                        uncheckedTrackColor = Color(0xFFEF4444)
+                                    )
+                                )
+                            }
+                        }
+                    }
+
+                    // 1.8. DEDICATED CELLULAR SIM CARD TELEMETRY & SWAP DETECTION CARD
+                    item {
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)),
+                            shape = RoundedCornerShape(20.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .border(
+                                    1.dp,
+                                    if (simDetails.isSimSwapped) Color(0xFFF59E0B) else Color(0xFF1E293B),
+                                    RoundedCornerShape(20.dp)
+                                )
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(18.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        Text("💳", fontSize = 18.sp)
+                                        Text(
+                                            "CELLULAR SIM CARD TELEMETRY",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Black,
+                                            color = Color(0xFF64748B),
+                                            letterSpacing = 1.sp
+                                        )
+                                    }
+                                    Surface(
+                                        color = if (simDetails.isSimSwapped) Color(0xFFF59E0B).copy(alpha = 0.2f)
+                                                else if (simDetails.isSimPresent) Color(0xFF38BDF8).copy(alpha = 0.15f)
+                                                else Color(0xFFEF4444).copy(alpha = 0.15f),
+                                        shape = RoundedCornerShape(8.dp)
+                                    ) {
+                                        Text(
+                                            if (simDetails.isSimSwapped) "⚠️ NEW SIM DETECTED"
+                                            else if (simDetails.isSimPresent) "ACTIVE & VERIFIED"
+                                            else "NO SIM INSERTED",
+                                            color = if (simDetails.isSimSwapped) Color(0xFFF59E0B)
+                                                    else if (simDetails.isSimPresent) Color(0xFF38BDF8)
+                                                    else Color(0xFFEF4444),
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                        )
+                                    }
+                                }
+
+                                if (simDetails.cards.isNotEmpty()) {
+                                    simDetails.cards.forEach { card ->
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .background(Color(0xFF1E293B).copy(alpha = 0.6f), RoundedCornerShape(12.dp))
+                                                .padding(12.dp),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                    Surface(
+                                                        color = Color(0xFF00F2FE).copy(alpha = 0.2f),
+                                                        shape = RoundedCornerShape(4.dp)
+                                                    ) {
+                                                        Text(
+                                                            "SLOT ${card.slotIndex + 1}",
+                                                            color = Color(0xFF00F2FE),
+                                                            fontSize = 9.sp,
+                                                            fontWeight = FontWeight.Black,
+                                                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                                                        )
+                                                    }
+                                                    Text(
+                                                        card.displayName,
+                                                        color = Color.White,
+                                                        fontWeight = FontWeight.Bold,
+                                                        fontSize = 13.sp
+                                                    )
+                                                }
+                                                if (!card.phoneNumber.isNullOrBlank()) {
+                                                    Text(
+                                                        "Number: ${card.phoneNumber}",
+                                                        color = Color(0xFF38BDF8),
+                                                        fontSize = 11.sp,
+                                                        fontWeight = FontWeight.SemiBold,
+                                                        fontFamily = FontFamily.Monospace
+                                                    )
+                                                }
+                                            }
+                                            if (!card.countryIso.isNullOrBlank()) {
+                                                Text(
+                                                    card.countryIso,
+                                                    color = Color(0xFF64748B),
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    Text(
+                                        "No physical or eSIM profile active in this handset.",
+                                        color = Color(0xFF64748B),
+                                        fontSize = 12.sp
+                                    )
+                                }
+
+                                if (simDetails.isSimSwapped) {
+                                    Surface(
+                                        color = Color(0xFFF59E0B).copy(alpha = 0.12f),
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(10.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(
+                                                    "🚨 SIM Card Change Alert",
+                                                    color = Color(0xFFF59E0B),
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                                Text(
+                                                    "New SIM card detected: ${simDetails.summary.replace("⚠️ SWAPPED: ", "")}. Cloud dashboard has been notified.",
+                                                    color = Color(0xFFCBD5E1),
+                                                    fontSize = 10.sp
+                                                )
+                                            }
+                                            TextButton(onClick = {
+                                                NetworkUtils.resetSimSwappedState(context)
+                                                simDetails = NetworkUtils.getSimDetails(context)
+                                            }) {
+                                                Text("Acknowledge", color = Color(0xFFF59E0B), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                            }
+                                        }
                                     }
                                 }
                             }

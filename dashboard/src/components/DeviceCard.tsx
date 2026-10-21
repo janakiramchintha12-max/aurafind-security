@@ -197,16 +197,26 @@ export const DeviceCard: React.FC<DeviceCardProps> = ({ device, onLocate, onRing
           setEditSimNumber(device.sim_number || '');
           setIsEditing(true);
         }}
-        className="mt-3 px-3 py-2 bg-slate-900/90 hover:bg-slate-850 border border-slate-700/70 hover:border-cyan-500/50 rounded-xl flex items-center justify-between text-xs font-mono transition-all cursor-pointer group"
-        title="Click to edit SIM Phone Number"
+        className={`mt-3 px-3 py-2.5 rounded-xl flex items-center justify-between text-xs font-mono transition-all cursor-pointer group ${
+          device.sim_number?.includes('SWAPPED')
+            ? 'bg-amber-950/60 border border-amber-500/80 hover:bg-amber-900/60 text-amber-200'
+            : 'bg-slate-900/90 hover:bg-slate-850 border border-slate-700/70 hover:border-cyan-500/50'
+        }`}
+        title="Click to view/edit SIM card and phone number"
       >
-        <span className="flex items-center space-x-1.5 text-slate-400 group-hover:text-slate-300">
-          <Phone className="w-3.5 h-3.5 text-cyan-400" />
-          <span>SIM Phone / Carrier:</span>
+        <span className="flex items-center space-x-1.5 text-slate-300 group-hover:text-white">
+          <Phone className={`w-3.5 h-3.5 ${device.sim_number?.includes('SWAPPED') ? 'text-amber-400 animate-pulse' : 'text-cyan-400'}`} />
+          <span className="font-semibold">
+            {device.sim_number?.includes('SWAPPED') ? '🚨 SIM SWAPPED / NEW SIM:' : '💳 SIM Card / Carrier:'}
+          </span>
         </span>
         <div className="flex items-center space-x-1.5">
-          <span className={`font-bold ${device.sim_number ? 'text-cyan-300' : 'text-amber-400'}`}>
-            {device.sim_number || (device.sim_status ? 'Active SIM (Click to set phone #)' : 'No SIM (Click to set phone #)')}
+          <span className={`font-bold ${
+            device.sim_number?.includes('SWAPPED')
+              ? 'text-amber-300 font-bold'
+              : device.sim_number ? 'text-cyan-300' : 'text-amber-400'
+          }`}>
+            {device.sim_number || (device.sim_status ? 'Active SIM' : 'No SIM Inserted')}
           </span>
           <Edit3 className="w-3 h-3 text-slate-500 group-hover:text-cyan-400 transition-colors" />
         </div>
@@ -257,11 +267,17 @@ export const DeviceCard: React.FC<DeviceCardProps> = ({ device, onLocate, onRing
             <MapPin className="w-3.5 h-3.5 text-cyan-400" />
             Last Location:
           </span>
-          <span className="font-mono text-slate-300 font-bold">
-            {device.last_latitude && device.last_longitude
-              ? `${device.last_latitude.toFixed(4)}, ${device.last_longitude.toFixed(4)}`
-              : '14.5666, 78.7453 (Live GPS)'}
-          </span>
+          {device.location_privacy_state === 'PAUSED_BY_DEVICE_USER' ? (
+            <span className="font-mono text-rose-400 font-bold bg-rose-950/60 px-2 py-0.5 rounded border border-rose-800/80">
+              🛑 PAUSED ON MOBILE
+            </span>
+          ) : (
+            <span className="font-mono text-slate-300 font-bold">
+              {device.last_latitude && device.last_longitude
+                ? `${device.last_latitude.toFixed(4)}, ${device.last_longitude.toFixed(4)}`
+                : '14.5666, 78.7453 (Live GPS)'}
+            </span>
+          )}
         </div>
         <div className="flex items-center justify-between">
           <span>Live Telemetry Sync:</span>

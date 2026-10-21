@@ -29,6 +29,8 @@ def load_registry_devices(db, admin_user_id: str):
                     is_charging=d.get("is_charging", False),
                     status=d.get("status", "ONLINE"),
                     enrollment_status=d.get("enrollment_status", "ENROLLED"),
+                    sim_status=d.get("sim_status", False),
+                    sim_number=d.get("sim_number", None),
                     last_heartbeat=datetime.now(timezone.utc)
                 )
                 db.add(dev)
@@ -62,6 +64,8 @@ def sync_device_to_registry(device: Device):
                 item["is_charging"] = device.is_charging
                 item["status"] = device.status
                 item["enrollment_status"] = device.enrollment_status
+                item["sim_status"] = device.sim_status
+                item["sim_number"] = device.sim_number
                 found = True
                 break
 
@@ -76,7 +80,9 @@ def sync_device_to_registry(device: Device):
                 "battery_pct": device.battery_pct,
                 "is_charging": device.is_charging,
                 "status": device.status,
-                "enrollment_status": device.enrollment_status
+                "enrollment_status": device.enrollment_status,
+                "sim_status": device.sim_status,
+                "sim_number": device.sim_number
             })
 
         with open(REGISTRY_PATH, "w", encoding="utf-8") as f:
