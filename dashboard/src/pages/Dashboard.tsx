@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Plus, RefreshCw, Smartphone, ShieldCheck, AlertTriangle, 
+  Plus, RefreshCw, Smartphone, ShieldCheck, AlertTriangle, Power, 
   Download, QrCode, Shield, Compass, Video, Volume2, Key, Radio,
   Copy, Check, Wifi, ExternalLink
 } from 'lucide-react';
@@ -222,17 +222,23 @@ export const DashboardPage: React.FC = () => {
           </div>
           <div>
             <div className="text-2xl font-bold text-white">{onlineCount}</div>
-            <div className="text-xs text-slate-400">Online Devices</div>
+            <div className="text-xs font-semibold text-emerald-400 flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+              Active & Powered On
+            </div>
           </div>
         </div>
 
         <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-4 flex items-center space-x-4">
-          <div className="p-3 bg-amber-500/10 text-amber-400 rounded-xl">
-            <AlertTriangle className="w-6 h-6" />
+          <div className="p-3 bg-rose-500/10 text-rose-400 rounded-xl">
+            <Power className="w-6 h-6" />
           </div>
           <div>
             <div className="text-2xl font-bold text-white">{offlineCount}</div>
-            <div className="text-xs text-slate-400">Offline / Queueing</div>
+            <div className="text-xs font-semibold text-rose-400 flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-rose-500"></span>
+              Switched Off / Inactive
+            </div>
           </div>
         </div>
       </div>

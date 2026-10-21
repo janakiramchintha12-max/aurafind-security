@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Smartphone, Battery, BatteryCharging, Wifi, WifiOff, Radio, MapPin, Bell, BellOff, RefreshCw, ChevronRight, Lock, AlertTriangle, Camera, Phone, Shield, FileText, Edit3, Save, X, Tv, QrCode, CheckCircle2, Zap, MessageSquare } from 'lucide-react';
+import { Power, Smartphone, Battery, BatteryCharging, Wifi, WifiOff, Radio, MapPin, Bell, BellOff, RefreshCw, ChevronRight, Lock, AlertTriangle, Camera, Phone, Shield, FileText, Edit3, Save, X, Tv, QrCode, CheckCircle2, Zap, MessageSquare } from 'lucide-react';
 import { Device } from '../types';
 import { devicesApi, commandsApi } from '../services/api';
 
@@ -178,15 +178,70 @@ export const DeviceCard: React.FC<DeviceCardProps> = ({ device, onLocate, onRing
           </div>
         </div>
         
-        {/* Status Badge */}
-        <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${
-          isOnline
-            ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'
-            : 'bg-rose-500/10 text-rose-400 border border-rose-500/30'
-        }`}>
-          <span className={`w-2 h-2 rounded-full mr-1.5 ${isOnline ? 'bg-emerald-400 animate-pulse' : 'bg-rose-400'}`}></span>
-          {device.status}
-        </span>
+        {/* Power & Operating Status Badge */}
+        <div className="flex flex-col items-end gap-1">
+          {isOnline ? (
+            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-black tracking-wide bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm shadow-emerald-500/20">
+              <span className="w-2 h-2 rounded-full mr-1.5 bg-emerald-400 animate-pulse"></span>
+              ACTIVE & RUNNING
+            </span>
+          ) : (
+            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-black tracking-wide bg-rose-500/20 text-rose-300 border border-rose-500/40 shadow-sm shadow-rose-500/20">
+              <span className="w-2 h-2 rounded-full mr-1.5 bg-rose-500"></span>
+              {device.battery_pct !== null && device.battery_pct <= 10 ? 'SWITCHED OFF (DEAD BATTERY)' : 'SWITCHED OFF / INACTIVE'}
+            </span>
+          )}
+          <div className="flex items-center gap-1.5 text-[10px]">
+            {isOnline && (
+              device.location_privacy_state === 'PAUSED_BY_DEVICE_USER' ? (
+                <span className="font-bold text-rose-400 bg-rose-950/80 px-2 py-0.5 rounded border border-rose-800">
+                  🛑 LOCATION OFF
+                </span>
+              ) : (
+                <span className="font-bold text-cyan-400 bg-cyan-950/60 px-2 py-0.5 rounded border border-cyan-800/40">
+                  📍 GPS ACTIVE
+                </span>
+              )
+            )}
+            {!isOnline && (
+              <span className="font-mono text-slate-400">
+                Last seen: {offlineTimeStr}
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Primary Power & Operating State Bar */}
+      <div className={`mt-3 p-3 rounded-xl border flex items-center justify-between transition-all ${
+        isOnline
+          ? 'bg-emerald-950/30 border-emerald-500/40 text-emerald-200'
+          : 'bg-rose-950/30 border-rose-500/40 text-rose-200'
+      }`}>
+        <div className="flex items-center space-x-2.5">
+          <div className={`p-2 rounded-lg ${isOnline ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'}`}>
+            <Power className={`w-4 h-4 ${isOnline ? 'animate-pulse text-emerald-400' : 'text-rose-400'}`} />
+          </div>
+          <div>
+            <div className="text-[11px] font-black uppercase tracking-wider flex items-center gap-1.5">
+              <span>HANDSET STATE:</span>
+              <span className={`px-2 py-0.5 rounded text-[10px] font-black ${
+                isOnline
+                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                  : 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+              }`}>
+                {isOnline ? '🟢 ACTIVE & POWERED ON' : '🔴 SWITCHED OFF / OFFLINE'}
+              </span>
+            </div>
+            <p className="text-[10px] text-slate-300 mt-0.5">
+              {isOnline
+                ? 'Handset is powered on, operating system active, and radios transmitting.'
+                : (device.battery_pct !== null && device.battery_pct <= 10
+                    ? `Handset powered down due to depleted battery (${Math.round(device.battery_pct)}%). Connect charger.`
+                    : `Handset is currently switched off, powered down, or in deep airplane/sleep mode.`)}
+            </p>
+          </div>
+        </div>
       </div>
 
       {/* SIM Phone Number Badge */}
@@ -260,13 +315,31 @@ export const DeviceCard: React.FC<DeviceCardProps> = ({ device, onLocate, onRing
         </div>
       </div>
 
-      {/* Location info */}
-      <div className="text-xs text-slate-400 space-y-1 mb-3">
+      {/* Location Operating & Power Status */}
+      <div className="text-xs text-slate-400 space-y-1.5 my-3 bg-slate-900/50 p-2.5 rounded-xl border border-slate-800">
         <div className="flex items-center justify-between">
-          <span className="flex items-center gap-1 text-slate-300">
+          <span className="flex items-center gap-1.5 text-slate-300 font-semibold">
             <MapPin className="w-3.5 h-3.5 text-cyan-400" />
-            Last Location:
+            Location Status:
           </span>
+          {device.location_privacy_state === 'PAUSED_BY_DEVICE_USER' ? (
+            <span className="font-mono text-rose-400 font-bold bg-rose-950/80 px-2 py-0.5 rounded border border-rose-700/80 text-[11px] flex items-center gap-1">
+              <span>🛑</span> SWITCHED OFF (ON MOBILE)
+            </span>
+          ) : isOnline ? (
+            <span className="font-mono text-emerald-400 font-bold bg-emerald-950/80 px-2 py-0.5 rounded border border-emerald-700/80 text-[11px] flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
+              ACTIVE & STREAMING
+            </span>
+          ) : (
+            <span className="font-mono text-slate-400 font-bold bg-slate-800 px-2 py-0.5 rounded text-[11px]">
+              INACTIVE (DEVICE SWITCHED OFF)
+            </span>
+          )}
+        </div>
+
+        <div className="flex items-center justify-between pt-1 border-t border-slate-800/60">
+          <span className="text-slate-400">GPS Coordinates:</span>
           {device.location_privacy_state === 'PAUSED_BY_DEVICE_USER' ? (
             <span className="font-mono text-rose-400 font-bold bg-rose-950/60 px-2 py-0.5 rounded border border-rose-800/80">
               🛑 PAUSED ON MOBILE
