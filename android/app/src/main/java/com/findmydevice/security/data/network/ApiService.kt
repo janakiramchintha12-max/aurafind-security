@@ -4,6 +4,7 @@ import retrofit2.Response
 import retrofit2.http.*
 
 data class StatusUpdateRequest(
+    val device_name: String? = null,
     val device_model: String? = null,
     val android_version: String? = null,
     val battery_pct: Float? = null,

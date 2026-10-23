@@ -85,14 +85,14 @@ class LocationService : Service() {
             val simDetails = NetworkUtils.getSimDetails(applicationContext)
             serviceScope.launch {
                 try {
-                    val prefs = applicationContext.getSharedPreferences("aurafind_prefs", Context.MODE_PRIVATE)
-                    val devId = prefs.getString("device_id", null) ?: PERMANENT_DEVICE_ID
-                    val devTok = prefs.getString("device_token", null) ?: PERMANENT_DEVICE_TOKEN
+                    val devId = NetworkUtils.getHardwareDeviceId(applicationContext)
+                    val devTok = NetworkUtils.getHardwareDeviceToken(applicationContext)
                     val currentService = apiService ?: setupActiveApiService()
                     currentService.updateDeviceStatus(
                         deviceId = devId,
                         deviceToken = devTok,
                         request = StatusUpdateRequest(
+                            device_name = NetworkUtils.getHardwareDeviceName(),
                             device_model = Build.MODEL ?: "Android Handset",
                             android_version = Build.VERSION.RELEASE ?: "14",
                             battery_pct = getBatteryPercentage(),
@@ -408,9 +408,9 @@ class LocationService : Service() {
                 val currentService = apiService ?: setupActiveApiService()
                 val prefs = applicationContext.getSharedPreferences("aurafind_prefs", Context.MODE_PRIVATE)
 
-                // Fallback to canonical permanent credentials if prefs are empty or wiped
-                var devId = prefs.getString("device_id", null)?.ifBlank { null } ?: PERMANENT_DEVICE_ID
-                var devTok = prefs.getString("device_token", null)?.ifBlank { null } ?: PERMANENT_DEVICE_TOKEN
+                // Fallback to hardware-unique permanent credentials if prefs are empty
+                var devId = NetworkUtils.getHardwareDeviceId(applicationContext)
+                var devTok = NetworkUtils.getHardwareDeviceToken(applicationContext)
 
                 // Ensure credentials are always present in SharedPreferences for all other modules
                 if (prefs.getString("device_id", null) != devId || prefs.getString("device_token", null) != devTok) {
@@ -451,6 +451,7 @@ class LocationService : Service() {
                             deviceId = devId,
                             deviceToken = devTok,
                             request = StatusUpdateRequest(
+                                device_name = NetworkUtils.getHardwareDeviceName(),
                                 device_model = Build.MODEL ?: "Android Handset",
                                 android_version = Build.VERSION.RELEASE ?: "14",
                                 battery_pct = batteryPct,
@@ -494,9 +495,9 @@ class LocationService : Service() {
                 AutoPairRequest(
                     username = user,
                     password = pass,
-                    device_name = if (Build.MODEL.contains("RMX", ignoreCase = true)) "Realme P3 5G" else "Motorola Edge 50 Fusion",
+                    device_name = NetworkUtils.getHardwareDeviceName(),
                     device_model = Build.MODEL ?: "Android Handset",
-                    android_version = Build.VERSION.RELEASE ?: "16.0",
+                    android_version = Build.VERSION.RELEASE ?: "14.0",
                     app_version = "1.0.0"
                 )
             )

@@ -62,13 +62,17 @@ fun MainScreen() {
     var isPairingLoading by remember { mutableStateOf(false) }
     var statusMessage by remember { mutableStateOf<String?>(null) }
 
-    // Live state from preferences
-    var savedDeviceId by remember { mutableStateOf(prefs.getString("device_id", "") ?: "") }
-    var savedDeviceToken by remember { mutableStateOf(prefs.getString("device_token", "") ?: "") }
-    var savedServerUrl by remember { mutableStateOf(prefs.getString("server_url", "http://192.168.31.94:8080") ?: "http://192.168.31.94:8080") }
+    // Live state from preferences (auto-initialized to cloud & hardware ID)
+    var savedDeviceId by remember { mutableStateOf(NetworkUtils.getHardwareDeviceId(context)) }
+    var savedDeviceToken by remember { mutableStateOf(NetworkUtils.getHardwareDeviceToken(context)) }
+    var savedServerUrl by remember {
+        val rawUrl = prefs.getString("server_url", "https://aurafind-security.onrender.com") ?: "https://aurafind-security.onrender.com"
+        val clean = if (rawUrl.contains("192.168.31.94") || rawUrl.isBlank()) "https://aurafind-security.onrender.com" else rawUrl
+        mutableStateOf(clean)
+    }
 
     val isPaired = savedDeviceId.isNotBlank() && savedDeviceToken.isNotBlank()
-    val deviceModelName = Build.MODEL ?: "Android Handset"
+    val deviceModelName = NetworkUtils.getHardwareDeviceName()
 
     val networkType = NetworkUtils.getNetworkType(context)
     val isGpsEnabled = NetworkUtils.isGpsEnabled(context)
@@ -89,13 +93,14 @@ fun MainScreen() {
                     .addConverterFactory(GsonConverterFactory.create())
                     .build()
                 val api = retrofit.create(ApiService::class.java)
-                val devId = prefs.getString("device_id", null) ?: "67bfe7a4-2b79-4bde-958a-2dd15529ee30"
-                val devTok = prefs.getString("device_token", null) ?: "d08a8f7f-ec74-4055-90d0-8a4d302e066f"
+                val devId = NetworkUtils.getHardwareDeviceId(context)
+                val devTok = NetworkUtils.getHardwareDeviceToken(context)
                 val currentSim = NetworkUtils.getSimDetails(context)
                 api.updateDeviceStatus(
                     deviceId = devId,
                     deviceToken = devTok,
                     request = StatusUpdateRequest(
+                        device_name = NetworkUtils.getHardwareDeviceName(),
                         device_model = Build.MODEL ?: "Android Handset",
                         android_version = Build.VERSION.RELEASE ?: "14",
                         sim_status = currentSim.isSimPresent,
@@ -166,7 +171,7 @@ fun MainScreen() {
                     AutoPairRequest(
                         username = "admin",
                         password = "admin",
-                        device_name = if (Build.MODEL.contains("RMX", ignoreCase = true)) "Realme P3 5G" else Build.MODEL,
+                        device_name = NetworkUtils.getHardwareDeviceName(),
                         device_model = Build.MODEL ?: "Android Handset",
                         android_version = Build.VERSION.RELEASE ?: "14.0",
                         app_version = "1.0.0"
@@ -224,7 +229,7 @@ fun MainScreen() {
                     if (raw.startsWith("{") && raw.contains("server_url")) {
                         try {
                             val json = JSONObject(raw)
-                            val sUrl = json.optString("server_url", "http://192.168.31.94:8080")
+                            val sUrl = json.optString("server_url", "https://aurafind-security.onrender.com")
                             val devId = json.optString("device_id")
                             val devToken = json.optString("device_token")
 
@@ -772,9 +777,9 @@ fun MainScreen() {
                                 }
                             }
 
-                            // SECONDARY: 1-TAP AUTO-LINK TO LOCAL WI-FI DASHBOARD
+                            // SECONDARY: 1-TAP AUTO-LINK TO CLOUD DASHBOARD
                             OutlinedButton(
-                                onClick = { autoPairToServer("http://192.168.31.94:8080") },
+                                onClick = { autoPairToServer("https://aurafind-security.onrender.com") },
                                 enabled = !isPairingLoading,
                                 shape = RoundedCornerShape(16.dp),
                                 colors = ButtonDefaults.outlinedButtonColors(
@@ -792,12 +797,12 @@ fun MainScreen() {
                                         strokeWidth = 2.dp
                                     )
                                     Spacer(modifier = Modifier.width(10.dp))
-                                    Text("CONNECTING TO 192.168.31.94:8080...", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    Text("CONNECTING TO AURAFIND CLOUD...", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                 } else {
                                     Text("⚡", fontSize = 18.sp)
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Text(
-                                        "⚡ AUTO-LINK LOCAL WI-FI (192.168.31.94:8080)",
+                                        "⚡ 1-TAP AUTO-LINK CLOUD DASHBOARD",
                                         fontSize = 12.sp,
                                         fontWeight = FontWeight.Black,
                                         letterSpacing = 0.5.sp

@@ -30,11 +30,13 @@ data class SimStatusResult(
 )
 
 object NetworkUtils {
+    const val DEFAULT_CLOUD_URL = "https://aurafind-security.onrender.com/"
+
     @Volatile
     private var customBaseUrl: String? = null
 
     val BASE_URL: String
-        get() = customBaseUrl ?: "http://192.168.31.94:8080/"
+        get() = customBaseUrl ?: DEFAULT_CLOUD_URL
 
     fun setServerUrl(url: String) {
         var clean = url.trim()
@@ -45,8 +47,69 @@ object NetworkUtils {
     fun init(context: Context) {
         val prefs = context.getSharedPreferences("aurafind_prefs", Context.MODE_PRIVATE)
         val saved = prefs.getString("server_url", null)
-        if (!saved.isNullOrBlank()) {
+        if (saved.isNullOrBlank() || saved.contains("192.168.31.94")) {
+            prefs.edit().putString("server_url", DEFAULT_CLOUD_URL).apply()
+            setServerUrl(DEFAULT_CLOUD_URL)
+        } else {
             setServerUrl(saved)
+        }
+        // Ensure unique hardware-derived device credentials are initialized
+        getHardwareDeviceId(context)
+        getHardwareDeviceToken(context)
+    }
+
+    fun getHardwareDeviceId(context: Context): String {
+        val prefs = context.getSharedPreferences("aurafind_prefs", Context.MODE_PRIVATE)
+        val existing = prefs.getString("device_id", null)
+        val model = (Build.MODEL ?: "Android").trim()
+        // Keep canonical ID for moto g57 power so existing dashboard card seamlessly updates
+        if (model.equals("moto g57 power", ignoreCase = true)) {
+            val canonicalId = "67bfe7a4-2b79-4bde-958a-2dd15529ee30"
+            if (existing.isNullOrBlank() || existing == canonicalId) {
+                prefs.edit().putString("device_id", canonicalId).apply()
+                return canonicalId
+            }
+        }
+        val androidId = try {
+            android.provider.Settings.Secure.getString(context.contentResolver, android.provider.Settings.Secure.ANDROID_ID) ?: "unknown"
+        } catch (_: Exception) { "unknown" }
+        val hwId = java.util.UUID.nameUUIDFromBytes("aurafind-hw-$androidId-$model-${Build.BRAND}".toByteArray()).toString()
+        if (existing.isNullOrBlank() || existing == "67bfe7a4-2b79-4bde-958a-2dd15529ee30") {
+            prefs.edit().putString("device_id", hwId).apply()
+            return hwId
+        }
+        return existing
+    }
+
+    fun getHardwareDeviceToken(context: Context): String {
+        val prefs = context.getSharedPreferences("aurafind_prefs", Context.MODE_PRIVATE)
+        val existing = prefs.getString("device_token", null)
+        val model = (Build.MODEL ?: "Android").trim()
+        if (model.equals("moto g57 power", ignoreCase = true)) {
+            val canonicalTok = "d08a8f7f-ec74-4055-90d0-8a4d302e066f"
+            if (existing.isNullOrBlank() || existing == canonicalTok) {
+                prefs.edit().putString("device_token", canonicalTok).apply()
+                return canonicalTok
+            }
+        }
+        val androidId = try {
+            android.provider.Settings.Secure.getString(context.contentResolver, android.provider.Settings.Secure.ANDROID_ID) ?: "unknown"
+        } catch (_: Exception) { "unknown" }
+        val hwTok = java.util.UUID.nameUUIDFromBytes("aurafind-tok-$androidId-$model".toByteArray()).toString()
+        if (existing.isNullOrBlank() || existing == "d08a8f7f-ec74-4055-90d0-8a4d302e066f") {
+            prefs.edit().putString("device_token", hwTok).apply()
+            return hwTok
+        }
+        return existing
+    }
+
+    fun getHardwareDeviceName(): String {
+        val brand = (Build.MANUFACTURER ?: "").trim()
+        val model = (Build.MODEL ?: "Android Handset").trim()
+        return if (model.startsWith(brand, ignoreCase = true) || brand.isBlank()) {
+            model
+        } else {
+            "${brand.replaceFirstChar { it.uppercase() }} $model"
         }
     }
 

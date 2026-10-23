@@ -36,6 +36,8 @@ def load_registry_devices(db, admin_user_id: str):
                 db.add(dev)
             else:
                 existing.user_id = admin_user_id
+                if existing.device_name == "Motorola Edge 50 Fusion" and "g57" in (existing.device_model or "").lower():
+                    existing.device_name = "Motorola Moto G57 Power"
         db.commit()
         logger.info(f"[Registry] Restored {len(devices_data)} devices from persistent registry.")
     except Exception as e:
