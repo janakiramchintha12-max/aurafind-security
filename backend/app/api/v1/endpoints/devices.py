@@ -437,15 +437,19 @@ def auto_pair_device(
     from app.core.security import verify_password
     user = db.query(User).filter((User.email == payload.username) | (User.email == payload.username.lower())).first()
     if not user or not verify_password(payload.password, user.hashed_password):
-        user = db.query(User).filter(User.email == "admin").first()
-        if not user:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid username or password for device auto-pairing"
-            )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid username or password for device auto-pairing"
+        )
 
     # Assign distinct deterministic ID per hardware model so multiple phones never overwrite each other
     model_clean = (payload.device_model or payload.device_name or "Android Handset").strip()
+    BLOCKED_DECOMMISSIONED_MODELS = {"rmx5004", "rmx5070", "realme rmx5004", "realme rmx5070", "motorola edge 60 fusion"}
+    if any(blocked in model_clean.lower() for blocked in BLOCKED_DECOMMISSIONED_MODELS):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This test handset model was decommissioned. Please pair fresh via the dashboard QR code."
+        )
     if model_clean.lower() == "moto g57 power":
         target_id = "67bfe7a4-2b79-4bde-958a-2dd15529ee30"
         target_token = "d08a8f7f-ec74-4055-90d0-8a4d302e066f"
