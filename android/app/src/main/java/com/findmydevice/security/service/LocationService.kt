@@ -431,8 +431,7 @@ class LocationService : Service() {
                             executeRemoteCommand(currentService, devId, devTok, cmd.id, cmd.command_type, cmd.payload)
                         }
                     } else if (commandsRes.code() in listOf(401, 403, 404)) {
-                        Log.w(TAG, "Server rejected pairing (${commandsRes.code()}). Re-pairing permanently...")
-                        performAutoPair(currentService, prefs)
+                        Log.w(TAG, "Server rejected command polling (${commandsRes.code()}). Handset is not enrolled or token invalid.")
                     }
                 } catch (e: Exception) {
                     // Transient network retry
@@ -470,8 +469,7 @@ class LocationService : Service() {
                             )
                         )
                         if (!statusRes.isSuccessful && statusRes.code() in listOf(401, 403, 404)) {
-                            Log.w(TAG, "Server rejected status update (${statusRes.code()}). Re-pairing permanently...")
-                            performAutoPair(currentService, prefs)
+                            Log.w(TAG, "Server rejected status update (${statusRes.code()}). Handset is not enrolled or token invalid.")
                         }
                     } catch (e: Exception) {
                         // Transient retry next tick

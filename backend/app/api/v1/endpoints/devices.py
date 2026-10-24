@@ -17,7 +17,7 @@ from app.schemas.device import (
 )
 from app.api.v1.deps import get_current_user, verify_device_ownership, log_audit
 from app.services.websocket_manager import manager
-from app.services.registry_sync import sync_device_to_registry, remove_device_from_registry
+from app.services.registry_sync import sync_device_to_registry, remove_device_from_registry, clear_registry
 
 router = APIRouter()
 
@@ -113,11 +113,14 @@ def wipe_all_devices(
     from app.models.snapshot import Snapshot
     from app.models.audio_recording import AudioRecording
     from app.models.video_recording import VideoRecording
-    from app.models.geofence import GeofenceEvent
+    from app.models.geofence import Geofence, GeofenceEvent
     from app.models.audit import AuditLog
+    from app.core.security import get_password_hash
+    import uuid
 
     ADMIN_ACCOUNTS = {"founder@theft.in", "janakiram12", "admin"}
-    if current_user.email in ADMIN_ACCOUNTS or current_user.id in {"founder-ceo-uuid", "janakiram12-user-uuid", "default-admin-uuid"}:
+    is_admin = current_user.email in ADMIN_ACCOUNTS or current_user.id in {"founder-ceo-uuid", "janakiram12-user-uuid", "default-admin-uuid"}
+    if is_admin:
         devices = db.query(Device).all()
     else:
         devices = db.query(Device).filter(Device.user_id == current_user.id).all()
@@ -133,8 +136,19 @@ def wipe_all_devices(
         db.query(AuditLog).filter(AuditLog.device_id.in_(dev_ids)).delete(synchronize_session=False)
         db.query(Device).filter(Device.id.in_(dev_ids)).delete(synchronize_session=False)
 
+    if is_admin:
+        clear_registry()
+        db.query(Geofence).delete(synchronize_session=False)
+        db.query(AuditLog).delete(synchronize_session=False)
+        # Remove all other accounts - keep strictly single clean admin account
+        db.query(User).filter(User.email != "admin").delete(synchronize_session=False)
+        admin_user = db.query(User).filter(User.email == "admin").first()
+        if admin_user:
+            admin_user.hashed_password = get_password_hash("admin")
+            admin_user.id = f"admin-{uuid.uuid4().hex[:12]}"
+
     db.commit()
-    return {"message": "All devices and associated data have been permanently removed.", "deleted_count": len(dev_ids)}
+    return {"message": "All devices, extra accounts, and telemetry have been permanently wiped clean.", "deleted_count": len(dev_ids)}
 
 @router.delete("/{device_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_device(
@@ -171,28 +185,16 @@ async def update_device_status(
 ):
     device = db.query(Device).filter(Device.id == device_id, Device.device_token == x_device_token).first()
     if not device:
-        # Self-healing: if device exists with ID, sync token; if not in DB, auto-restore for Administrator
+        # Check if device exists under this ID to sync refreshed token
         existing_any = db.query(Device).filter(Device.id == device_id).first()
         if existing_any:
             existing_any.device_token = x_device_token
             device = existing_any
         else:
-            from app.models.user import User
-            admin_user = db.query(User).filter(User.email == "admin").first()
-            admin_id = admin_user.id if admin_user else "admin-user-uuid"
-            device = Device(
-                id=device_id,
-                user_id=admin_id,
-                device_token=x_device_token,
-                device_name=status_in.device_name or status_in.device_model or f"Android Device ({device_id[:6]})",
-                device_model=status_in.device_model or "Android Handset",
-                status="ONLINE",
-                enrollment_status="ENROLLED",
-                last_heartbeat=datetime.now(timezone.utc)
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Device not found or has been removed. Please pair the device first."
             )
-            db.add(device)
-            db.commit()
-            db.refresh(device)
 
     if device.enrollment_status == "REVOKED":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Device enrollment has been revoked")
@@ -532,9 +534,18 @@ def purge_all_devices(
     for g in user_geofences:
         db.delete(g)
     if is_admin:
+        clear_registry()
         db.query(AuditLog).delete(synchronize_session=False)
+        # Remove all other accounts - keep strictly single clean admin account
+        db.query(User).filter(User.email != "admin").delete(synchronize_session=False)
+        admin_user = db.query(User).filter(User.email == "admin").first()
+        if admin_user:
+            from app.core.security import get_password_hash
+            import uuid
+            admin_user.hashed_password = get_password_hash("admin")
+            admin_user.id = f"admin-{uuid.uuid4().hex[:12]}"
     else:
         db.query(AuditLog).filter(AuditLog.user_id == current_user.id).delete(synchronize_session=False)
     db.commit()
 
-    return {"status": "purged", "message": "All devices and historical records have been permanently cleared."}
+    return {"status": "purged", "message": "All devices, extra accounts, and historical records have been permanently cleared."}

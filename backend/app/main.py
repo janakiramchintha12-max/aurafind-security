@@ -31,11 +31,12 @@ def init_fresh_platform_state():
         db.query(AudioRecording).delete(synchronize_session=False)
         db.query(VideoRecording).delete(synchronize_session=False)
 
-        # 2. Ensure only the single simple admin account exists
+        # 2. Ensure only the single simple admin account exists with rotated ID (invalidates previous sessions)
+        fresh_admin_id = f"admin-{uuid.uuid4().hex[:12]}"
         admin_user = db.query(User).filter(User.email == "admin").first()
         if not admin_user:
             admin_user = User(
-                id="admin-user-uuid",
+                id=fresh_admin_id,
                 email="admin",
                 hashed_password=get_password_hash("admin"),
                 full_name="Administrator"
@@ -45,15 +46,25 @@ def init_fresh_platform_state():
             db.refresh(admin_user)
         else:
             admin_user.hashed_password = get_password_hash("admin")
+            admin_user.id = fresh_admin_id
             db.commit()
 
-        # Reassign all registered devices to admin so they never disappear
-        db.query(Device).update({Device.user_id: admin_user.id})
-        db.commit()
-
         # Seed and restore persistent registered devices from persistent devices_registry.json
-        from app.services.registry_sync import load_registry_devices
-        load_registry_devices(db, admin_user.id)
+        from app.services.registry_sync import load_registry_devices, REGISTRY_PATH
+        if os.path.exists(REGISTRY_PATH):
+            with open(REGISTRY_PATH, "r", encoding="utf-8") as f:
+                try:
+                    registry_devices = json.load(f)
+                except Exception:
+                    registry_devices = []
+            if not registry_devices:
+                # Factory reset state: clear all devices when registry is empty
+                db.query(Device).delete(synchronize_session=False)
+                db.commit()
+            else:
+                db.query(Device).update({Device.user_id: admin_user.id})
+                db.commit()
+                load_registry_devices(db, admin_user.id)
 
         # Remove all other accounts - keep strictly 1 active account
         db.query(User).filter(User.email != "admin").delete(synchronize_session=False)

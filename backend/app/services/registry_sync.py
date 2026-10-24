@@ -104,3 +104,12 @@ def remove_device_from_registry(device_id: str):
             json.dump(devices_data, f, indent=2)
     except Exception as e:
         logger.warning(f"[Registry] Error removing device: {e}")
+
+def clear_registry():
+    """Wipes the persistent devices_registry.json file clean."""
+    try:
+        with open(REGISTRY_PATH, "w", encoding="utf-8") as f:
+            json.dump([], f, indent=2)
+        logger.info("[Registry] Registry file wiped clean.")
+    except Exception as e:
+        logger.warning(f"[Registry] Error clearing registry: {e}")
