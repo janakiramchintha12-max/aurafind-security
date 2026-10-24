@@ -222,24 +222,10 @@ def get_pending_commands_for_device(
             existing_any.device_token = x_device_token
             device = existing_any
         else:
-            from app.models.user import User
-            admin_user = db.query(User).filter(User.email == "admin").first()
-            admin_id = admin_user.id if admin_user else "admin-user-uuid"
-            device = Device(
-                id=device_id,
-                user_id=admin_id,
-                device_token=x_device_token,
-                device_name=f"Android Device ({device_id[:6]})",
-                device_model="Android Handset",
-                status="ONLINE",
-                enrollment_status="ENROLLED",
-                last_heartbeat=datetime.now(timezone.utc)
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Device not found or has been removed."
             )
-            db.add(device)
-            db.commit()
-            db.refresh(device)
-            from app.services.registry_sync import sync_device_to_registry
-            sync_device_to_registry(device)
 
     if device.enrollment_status == "REVOKED":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Device enrollment has been revoked")

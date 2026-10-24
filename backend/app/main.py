@@ -325,22 +325,9 @@ async def websocket_endpoint(
                     device = existing_any
                     db.commit()
                 else:
-                    from app.models.user import User
-                    admin_user = db.query(User).filter(User.email == "admin").first()
-                    admin_id = admin_user.id if admin_user else "admin-user-uuid"
-                    device = Device(
-                        id=device_id,
-                        user_id=admin_id,
-                        device_token=device_token,
-                        device_name=f"Android Device ({device_id[:6]})",
-                        device_model="Android Handset",
-                        status="ONLINE",
-                        enrollment_status="ENROLLED",
-                        last_heartbeat=datetime.now(timezone.utc)
-                    )
-                    db.add(device)
-                    db.commit()
-                    db.refresh(device)
+                    db.close()
+                    await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+                    return
             try:
                 db.close()
             except Exception:
